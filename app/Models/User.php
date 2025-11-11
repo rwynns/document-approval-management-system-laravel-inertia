@@ -107,4 +107,20 @@ class User extends Authenticatable
 
         return $this->user_auths->first()->company;
     }
+
+    /**
+     * Get the user's signatures.
+     */
+    public function signatures()
+    {
+        return $this->hasMany(Signature::class);
+    }
+
+    /**
+     * Get the user's default signature.
+     */
+    public function defaultSignature()
+    {
+        return $this->hasOne(Signature::class)->where('is_default', true);
+    }
 }

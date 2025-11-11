@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Head, router, usePage } from '@inertiajs/react';
-import { IconArrowLeft, IconDownload, IconEdit, IconFileText, IconSend, IconTrash } from '@tabler/icons-react';
+import { IconArrowLeft, IconDownload, IconEdit, IconEye, IconFileText, IconSend, IconTrash } from '@tabler/icons-react';
 import { AlertCircleIcon, CalendarIcon, CheckCircle2, CheckCircle2Icon, ClockIcon, FileTextIcon, XCircleIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -140,7 +140,9 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [isSubmitDialogOpen, setIsSubmitDialogOpen] = useState(false);
-    const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
+    const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
+    const [previewFileUrl, setPreviewFileUrl] = useState<string>('');
+    const [previewFileName, setPreviewFileName] = useState<string>('');
     const [masterflows, setMasterflows] = useState<Masterflow[]>([]);
     const [selectedMasterflow, setSelectedMasterflow] = useState<Masterflow | null>(null);
     const [availableApprovers, setAvailableApprovers] = useState<Record<number, any[]>>({});
@@ -543,6 +545,21 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
         }
     };
 
+    // Handle preview document
+    const handlePreview = (version: DokumenVersion) => {
+        const fileUrl = `/storage/${version.file_url}`;
+        const isPDF = version.tipe_file.toLowerCase() === 'pdf';
+
+        if (!isPDF) {
+            showToast.error('❌ Preview hanya tersedia untuk file PDF.');
+            return;
+        }
+
+        setPreviewFileUrl(fileUrl);
+        setPreviewFileName(version.nama_file);
+        setIsPreviewDialogOpen(true);
+    };
+
     // Handle submit for approval (untuk draft dokumen)
     const handleSubmitForApproval = () => {
         if (dokumen.status !== 'draft') {
@@ -696,59 +713,6 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                     </CardContent>
                                 </Card>
 
-                                {/* Document Preview Card */}
-                                {dokumen.versions &&
-                                    dokumen.versions.length > 0 &&
-                                    (() => {
-                                        const latestVersion = dokumen.versions.sort(
-                                            (a, b) => new Date(b.tgl_upload).getTime() - new Date(a.tgl_upload).getTime(),
-                                        )[0];
-                                        const fileUrl = `/storage/${latestVersion.file_url}`;
-                                        const isPDF = latestVersion.tipe_file.toLowerCase() === 'pdf';
-
-                                        return (
-                                            <Card>
-                                                <CardHeader>
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <CardTitle className="font-serif text-lg">Preview Dokumen</CardTitle>
-                                                            <CardDescription className="font-sans">
-                                                                {latestVersion.nama_file} • v{latestVersion.version} •{' '}
-                                                                {formatFileSize(latestVersion.size_file)}
-                                                            </CardDescription>
-                                                        </div>
-                                                    </div>
-                                                </CardHeader>
-                                                <CardContent>
-                                                    {isPDF ? (
-                                                        <PDFViewer
-                                                            fileUrl={fileUrl}
-                                                            fileName={latestVersion.nama_file}
-                                                            onDownload={() => handleDownload(latestVersion.id)}
-                                                            onFullscreen={() => setIsPreviewFullscreen(true)}
-                                                            showControls={true}
-                                                            height="600px"
-                                                        />
-                                                    ) : (
-                                                        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 p-12">
-                                                            <IconFileText className="mb-4 h-16 w-16 text-muted-foreground" />
-                                                            <p className="mb-2 font-sans text-sm font-medium text-foreground">
-                                                                Preview tidak tersedia untuk file {latestVersion.tipe_file.toUpperCase()}
-                                                            </p>
-                                                            <p className="mb-4 text-xs text-muted-foreground">
-                                                                Silakan download file untuk melihat isinya
-                                                            </p>
-                                                            <Button variant="outline" onClick={() => handleDownload(latestVersion.id)}>
-                                                                <IconDownload className="mr-2 h-4 w-4" />
-                                                                Download {latestVersion.tipe_file.toUpperCase()}
-                                                            </Button>
-                                                        </div>
-                                                    )}
-                                                </CardContent>
-                                            </Card>
-                                        );
-                                    })()}
-
                                 {/* Approval Progress Card */}
                                 <Card>
                                     <CardHeader>
@@ -884,29 +848,40 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                             <div className="space-y-2">
                                                 {dokumen.versions
                                                     .sort((a, b) => new Date(b.tgl_upload).getTime() - new Date(a.tgl_upload).getTime())
-                                                    .map((version) => (
-                                                        <div
-                                                            key={version.id}
-                                                            className="flex items-center justify-between rounded-lg border border-border bg-background p-3 hover:bg-muted/50"
-                                                        >
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                                                                    <IconFileText className="h-5 w-5 text-primary" />
+                                                    .map((version) => {
+                                                        const isPDF = version.tipe_file.toLowerCase() === 'pdf';
+                                                        return (
+                                                            <div
+                                                                key={version.id}
+                                                                className="flex items-center justify-between rounded-lg border border-border bg-background p-3 hover:bg-muted/50"
+                                                            >
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                                                                        <IconFileText className="h-5 w-5 text-primary" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="font-sans text-sm font-medium">{version.nama_file}</p>
+                                                                        <p className="font-mono text-xs text-muted-foreground">
+                                                                            v{version.version} • {formatFileSize(version.size_file)} •{' '}
+                                                                            {formatDate(version.tgl_upload)}
+                                                                        </p>
+                                                                    </div>
                                                                 </div>
-                                                                <div>
-                                                                    <p className="font-sans text-sm font-medium">{version.nama_file}</p>
-                                                                    <p className="font-mono text-xs text-muted-foreground">
-                                                                        v{version.version} • {formatFileSize(version.size_file)} •{' '}
-                                                                        {formatDate(version.tgl_upload)}
-                                                                    </p>
+                                                                <div className="flex items-center gap-2">
+                                                                    {isPDF && (
+                                                                        <Button variant="outline" size="sm" onClick={() => handlePreview(version)}>
+                                                                            <IconEye className="mr-2 h-4 w-4" />
+                                                                            Preview
+                                                                        </Button>
+                                                                    )}
+                                                                    <Button variant="outline" size="sm" onClick={() => handleDownload(version.id)}>
+                                                                        <IconDownload className="mr-2 h-4 w-4" />
+                                                                        Download
+                                                                    </Button>
                                                                 </div>
                                                             </div>
-                                                            <Button variant="outline" size="sm" onClick={() => handleDownload(version.id)}>
-                                                                <IconDownload className="mr-2 h-4 w-4" />
-                                                                Download
-                                                            </Button>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -1051,41 +1026,17 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                         </DialogContent>
                     </Dialog>
 
-                    {/* Fullscreen Preview Dialog */}
-                    <Dialog open={isPreviewFullscreen} onOpenChange={setIsPreviewFullscreen}>
-                        <DialogContent className="h-[95vh] max-w-[95vw] p-0">
-                            <DialogHeader className="p-6 pb-0">
-                                <DialogTitle className="font-serif">Preview Dokumen - Fullscreen</DialogTitle>
-                                <DialogDescription className="font-sans">
-                                    {dokumen.versions &&
-                                        dokumen.versions.length > 0 &&
-                                        (() => {
-                                            const latestVersion = dokumen.versions.sort(
-                                                (a, b) => new Date(b.tgl_upload).getTime() - new Date(a.tgl_upload).getTime(),
-                                            )[0];
-                                            return `${latestVersion.nama_file} • v${latestVersion.version}`;
-                                        })()}
-                                </DialogDescription>
+                    {/* PDF Preview Dialog */}
+                    <Dialog open={isPreviewDialogOpen} onOpenChange={setIsPreviewDialogOpen}>
+                        <DialogContent className="flex h-[90vh] max-w-[90vw] flex-col p-0">
+                            <DialogHeader className="shrink-0 border-b p-4">
+                                <DialogTitle className="font-serif">Preview Dokumen</DialogTitle>
+                                <DialogDescription className="font-sans">{previewFileName}</DialogDescription>
                             </DialogHeader>
-                            <div className="flex-1 p-6 pt-0" style={{ height: 'calc(95vh - 120px)' }}>
-                                {dokumen.versions &&
-                                    dokumen.versions.length > 0 &&
-                                    (() => {
-                                        const latestVersion = dokumen.versions.sort(
-                                            (a, b) => new Date(b.tgl_upload).getTime() - new Date(a.tgl_upload).getTime(),
-                                        )[0];
-                                        const fileUrl = `/storage/${latestVersion.file_url}`;
-
-                                        return (
-                                            <PDFViewer
-                                                fileUrl={fileUrl}
-                                                fileName={latestVersion.nama_file}
-                                                onDownload={() => handleDownload(latestVersion.id)}
-                                                showControls={true}
-                                                height="100%"
-                                            />
-                                        );
-                                    })()}
+                            <div className="flex-1 overflow-auto p-4">
+                                {previewFileUrl && (
+                                    <PDFViewer fileUrl={previewFileUrl} fileName={previewFileName} showControls={true} height="100%" />
+                                )}
                             </div>
                         </DialogContent>
                     </Dialog>

@@ -29,15 +29,40 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
+        $validated = $request->validated();
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        // Update basic profile info
+        $user->fill([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+        ]);
+
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
         }
 
-        $request->user()->save();
+        // Update password if provided
+        if (!empty($validated['password'])) {
+            $user->password = bcrypt($validated['password']);
+        }
 
-        return to_route('profile.edit');
+        // Update PIN if provided
+        if (!empty($validated['pin'])) {
+            $user->pin = bcrypt($validated['pin']);
+        }
+
+        $user->save();
+
+        // Update address in profile
+        if (isset($validated['alamat'])) {
+            $user->profile()->updateOrCreate(
+                ['user_id' => $user->id],
+                ['address' => $validated['alamat']]
+            );
+        }
+
+        return to_route('profile.edit')->with('status', 'profile-updated');
     }
 
     /**

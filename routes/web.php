@@ -136,6 +136,7 @@ Route::middleware(['auth'])->group(function () {
 
     // Document approvals
     Route::get('approvals', [\App\Http\Controllers\DokumenApprovalController::class, 'index'])->name('approvals.index');
+    Route::get('approvals/{approval}', [\App\Http\Controllers\DokumenApprovalController::class, 'show'])->name('approvals.show');
     Route::post('approvals/{approval}/approve', [\App\Http\Controllers\DokumenApprovalController::class, 'approve'])->name('approvals.approve');
     Route::post('approvals/{approval}/reject', [\App\Http\Controllers\DokumenApprovalController::class, 'reject'])->name('approvals.reject');
     Route::post('approvals/{approval}/delegate', [\App\Http\Controllers\DokumenApprovalController::class, 'delegate'])->name('approvals.delegate');
@@ -144,6 +145,13 @@ Route::middleware(['auth'])->group(function () {
     Route::post('dokumen/{dokumen}/comments', [\App\Http\Controllers\CommentController::class, 'store'])->name('comments.store');
     Route::put('comments/{comment}', [\App\Http\Controllers\CommentController::class, 'update'])->name('comments.update');
     Route::delete('comments/{comment}', [\App\Http\Controllers\CommentController::class, 'destroy'])->name('comments.destroy');
+
+    // Signatures
+    Route::get('signatures', [\App\Http\Controllers\SignatureController::class, 'index'])->name('signatures.index');
+    Route::post('signatures', [\App\Http\Controllers\SignatureController::class, 'store'])->name('signatures.store');
+    Route::post('signatures/upload', [\App\Http\Controllers\SignatureController::class, 'upload'])->name('signatures.upload');
+    Route::post('signatures/{signature}/set-default', [\App\Http\Controllers\SignatureController::class, 'setDefault'])->name('signatures.setDefault');
+    Route::delete('signatures/{signature}', [\App\Http\Controllers\SignatureController::class, 'destroy'])->name('signatures.destroy');
 
     // Helper routes
     Route::get('masterflows/{masterflow}/steps', function (\App\Models\Masterflow $masterflow) {

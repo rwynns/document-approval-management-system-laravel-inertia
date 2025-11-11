@@ -52,7 +52,7 @@ class DokumenApprovalController extends Controller
             'overdue' => DokumenApproval::byUser(Auth::id())->overdue()->count(),
         ];
 
-        return Inertia::render('DokumenApproval/Index', [
+        return Inertia::render('approvals/index', [
             'approvals' => $approvals,
             'stats' => $stats,
             'filters' => $request->only(['status', 'overdue', 'search']),
@@ -83,7 +83,7 @@ class DokumenApprovalController extends Controller
             ->orderBy('masterflow_step_id')
             ->get();
 
-        return Inertia::render('DokumenApproval/Show', [
+        return Inertia::render('approvals/show', [
             'approval' => $approval,
             'allApprovals' => $allApprovals,
             'canApprove' => $approval->isPending(),
@@ -124,7 +124,7 @@ class DokumenApprovalController extends Controller
 
             DB::commit();
 
-            return redirect()->route('approval.index')
+            return redirect()->route('approvals.index')
                 ->with('success', 'Dokumen berhasil di-approve!');
         } catch (\Exception $e) {
             DB::rollback();
@@ -168,7 +168,7 @@ class DokumenApprovalController extends Controller
 
             DB::commit();
 
-            return redirect()->route('approval.index')
+            return redirect()->route('approvals.index')
                 ->with('success', 'Dokumen berhasil di-reject!');
         } catch (\Exception $e) {
             DB::rollback();

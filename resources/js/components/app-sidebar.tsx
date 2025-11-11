@@ -7,6 +7,7 @@ import {
     GlobeIcon,
     LayoutDashboardIcon,
     ShieldIcon,
+    UserIcon,
     UsersIcon,
 } from 'lucide-react';
 import * as React from 'react';
@@ -22,6 +23,21 @@ const superAdminNavMain = [
         title: 'Dashboard',
         url: '/super-admin/dashboard',
         icon: LayoutDashboardIcon,
+    },
+    {
+        title: 'Dokumen Saya',
+        url: '/user/dokumen',
+        icon: FileTextIcon,
+    },
+    {
+        title: 'Approvals',
+        url: '/approvals',
+        icon: CheckSquareIcon,
+    },
+    {
+        title: 'Profile',
+        url: '/settings/profile',
+        icon: UserIcon,
     },
     {
         title: 'Role Management',
@@ -58,6 +74,21 @@ const adminNavMain = [
         icon: LayoutDashboardIcon,
     },
     {
+        title: 'Dokumen Saya',
+        url: '/user/dokumen',
+        icon: FileTextIcon,
+    },
+    {
+        title: 'Approvals',
+        url: '/approvals',
+        icon: CheckSquareIcon,
+    },
+    {
+        title: 'Profile',
+        url: '/settings/profile',
+        icon: UserIcon,
+    },
+    {
         title: 'Masterflow Management',
         url: '/admin/masterflows',
         icon: FolderKanbanIcon,
@@ -85,6 +116,11 @@ const userNavMain = [
         title: 'Approvals',
         url: '/approvals',
         icon: CheckSquareIcon,
+    },
+    {
+        title: 'Profile',
+        url: '/settings/profile',
+        icon: UserIcon,
     },
 ];
 
