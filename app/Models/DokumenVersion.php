@@ -27,6 +27,7 @@ class DokumenVersion extends Model
         'tgl_upload',
         'tipe_file',
         'file_url',
+        'signed_file_url',
         'size_file',
         'status',
     ];

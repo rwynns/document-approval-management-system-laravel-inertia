@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\DokumenApproval;
 use App\Models\Dokumen;
+use App\Services\PdfSignatureService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class DokumenApprovalController extends Controller
@@ -93,21 +95,117 @@ class DokumenApprovalController extends Controller
     /**
      * Approve the document.
      */
-    public function approve(Request $request, DokumenApproval $approval)
+    public function approve(Request $request, DokumenApproval $approval, PdfSignatureService $pdfSignatureService)
     {
         // Ensure user can approve this
         if ($approval->user_id !== Auth::id() || !$approval->isPending()) {
             return back()->withErrors(['error' => 'Anda tidak dapat melakukan approval ini.']);
         }
 
+        // Load dokumen_version if not already loaded
+        if (!$approval->relationLoaded('dokumenVersion')) {
+            $approval->load('dokumenVersion');
+        }
+
         $validated = $request->validate([
             'comment' => 'nullable|string|max:1000',
+            'signature' => 'required|string',
+            'signature_position' => 'nullable|string|in:bottom_right,bottom_left,bottom_center',
         ]);
 
         DB::beginTransaction();
         try {
-            // Approve this approval
-            $approval->approve($validated['comment']);
+            // Handle signature storage
+            $signaturePath = null;
+            $signatureData = $validated['signature'];
+
+            if (str_starts_with($signatureData, 'data:image')) {
+                // New manual signature - decode and save
+                $image = str_replace('data:image/png;base64,', '', $signatureData);
+                $image = str_replace(' ', '+', $image);
+                $imageData = base64_decode($image);
+
+                $filename = 'approval_signature_' . time() . '_' . \Illuminate\Support\Str::random(10) . '.png';
+                $path = 'signatures/approvals/' . $approval->id . '/' . $filename;
+
+                \Illuminate\Support\Facades\Storage::disk('public')->put($path, $imageData);
+                $signaturePath = $path;
+            } elseif (str_starts_with($signatureData, 'http') || str_starts_with($signatureData, '/storage')) {
+                // Existing signature URL - extract path
+                $signaturePath = str_replace('/storage/', '', parse_url($signatureData, PHP_URL_PATH));
+            }
+
+            // Approve this approval with signature
+            $approval->update([
+                'approval_status' => 'approved',
+                'tgl_approve' => now(),
+                'comment' => $validated['comment'],
+                'signature_path' => $signaturePath,
+            ]);
+
+            // Add signature to PDF document
+            Log::info('Checking if signature should be embedded', [
+                'signature_path' => $signaturePath,
+                'has_dokumen_version' => !is_null($approval->dokumenVersion),
+                'dokumen_version' => $approval->dokumenVersion,
+            ]);
+
+            if ($signaturePath && $approval->dokumenVersion) {
+                try {
+                    $originalPdfPath = $approval->dokumenVersion->file_url;
+                    Log::info('Starting PDF signature embedding', [
+                        'original_pdf' => $originalPdfPath,
+                        'signature_path' => $signaturePath,
+                        'approval_id' => $approval->id
+                    ]);
+
+                    // Get all approved signatures for this document
+                    $allApprovedApprovals = DokumenApproval::where('dokumen_id', $approval->dokumen_id)
+                        ->where('approval_status', 'approved')
+                        ->whereNotNull('signature_path')
+                        ->with(['user', 'masterflowStep'])
+                        ->get();
+
+                    // Prepare signatures array
+                    $signatures = [];
+                    foreach ($allApprovedApprovals as $approvedApproval) {
+                        $signatures[] = [
+                            'path' => $approvedApproval->signature_path,
+                            'name' => $approvedApproval->user->name ?? '',
+                            'text' => $approvedApproval->masterflowStep?->step_name ?? 'Approved',
+                            'date' => $approvedApproval->tgl_approve?->format('d/m/Y H:i') ?? now()->format('d/m/Y H:i'),
+                        ];
+                    }
+
+                    Log::info('Signatures prepared for PDF', [
+                        'count' => count($signatures),
+                        'signatures' => $signatures
+                    ]);
+
+                    // Add all signatures to PDF
+                    $signedPdfPath = $pdfSignatureService->addMultipleSignaturesToPdf(
+                        $originalPdfPath,
+                        $signatures
+                    );
+
+                    Log::info('PDF signature embedding completed', [
+                        'signed_pdf_path' => $signedPdfPath
+                    ]);
+
+                    // Update dokumen version with signed PDF path (keep original file_url intact)
+                    $approval->dokumenVersion->update([
+                        'signed_file_url' => $signedPdfPath,
+                    ]);
+
+                    Log::info('Updated dokumen version with signed PDF');
+                } catch (\Exception $e) {
+                    // Log error but don't fail the approval
+                    Log::error('Failed to add signature to PDF: ' . $e->getMessage(), [
+                        'exception' => $e,
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            }
 
             // Add comment if provided
             if ($validated['comment']) {
@@ -125,7 +223,7 @@ class DokumenApprovalController extends Controller
             DB::commit();
 
             return redirect()->route('approvals.index')
-                ->with('success', 'Dokumen berhasil di-approve!');
+                ->with('success', 'Dokumen berhasil di-approve dan ditandatangani!');
         } catch (\Exception $e) {
             DB::rollback();
             return back()->withErrors(['error' => 'Gagal melakukan approval: ' . $e->getMessage()]);

@@ -1,11 +1,13 @@
 import { AppSidebar } from '@/components/app-sidebar';
 import PDFViewer from '@/components/pdf-viewer';
+import SignaturePad from '@/components/signature-pad';
 import { SiteHeader } from '@/components/site-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Textarea } from '@/components/ui/textarea';
 import { showToast } from '@/lib/toast';
@@ -19,6 +21,7 @@ import {
     IconDownload,
     IconEye,
     IconFileText,
+    IconPencil,
     IconUser,
     IconX,
 } from '@tabler/icons-react';
@@ -40,6 +43,7 @@ interface DokumenVersion {
     tgl_upload: string;
     tipe_file: string;
     file_url: string;
+    signed_file_url?: string;
     size_file: number;
 }
 
@@ -80,6 +84,8 @@ interface DokumenApproval {
     tgl_approve?: string;
     alasan_reject?: string;
     comment?: string;
+    signature_path?: string;
+    signature_url?: string;
     created_at: string;
     dokumen: Dokumen;
     masterflow_step?: MasterflowStep;
@@ -97,9 +103,12 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
     const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
     const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
     const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
+    const [showSignaturePad, setShowSignaturePad] = useState(false);
+    const [signatureData, setSignatureData] = useState<string | null>(null);
 
     const approveForm = useForm({
         comment: '',
+        signature: '',
     });
 
     const rejectForm = useForm({
@@ -107,13 +116,28 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
         comment: '',
     });
 
+    // Handle signature complete
+    const handleSignatureComplete = (signature: string) => {
+        setSignatureData(signature);
+        approveForm.setData('signature', signature);
+        setShowSignaturePad(false);
+        showToast.success('✅ Tanda tangan berhasil ditambahkan!');
+    };
+
     // Handle approve
     const handleApprove = () => {
+        if (!signatureData) {
+            showToast.error('❌ Silakan tanda tangani dokumen terlebih dahulu');
+            return;
+        }
+
         approveForm.post(route('approvals.approve', approval.id), {
             preserveScroll: true,
             onSuccess: () => {
                 showToast.success('✅ Dokumen berhasil disetujui!');
                 setIsApproveDialogOpen(false);
+                setSignatureData(null);
+                setShowSignaturePad(false);
             },
             onError: () => {
                 showToast.error('❌ Gagal menyetujui dokumen.');
@@ -200,7 +224,8 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
     // Check if overdue
     const isOverdue = approval.tgl_deadline && new Date(approval.tgl_deadline) < new Date();
 
-    const fileUrl = approval.dokumen_version ? `/storage/${approval.dokumen_version.file_url}` : '';
+    // Use signed PDF if available, otherwise use original
+    const fileUrl = approval.dokumen_version ? `/storage/${approval.dokumen_version.signed_file_url || approval.dokumen_version.file_url}` : '';
 
     return (
         <>
@@ -305,7 +330,15 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
                             {approval.dokumen_version && (
                                 <Card>
                                     <CardHeader>
-                                        <CardTitle className="font-serif">File Dokumen</CardTitle>
+                                        <div className="flex items-center justify-between">
+                                            <CardTitle className="font-serif">File Dokumen</CardTitle>
+                                            {approval.dokumen_version.signed_file_url && (
+                                                <Badge variant="outline" className="border-green-300 bg-green-50 text-green-700">
+                                                    <IconCheck className="mr-1 h-3 w-3" />
+                                                    Sudah Ditandatangani
+                                                </Badge>
+                                            )}
+                                        </div>
                                     </CardHeader>
                                     <CardContent>
                                         <div className="flex items-center justify-between rounded-lg border p-4">
@@ -314,7 +347,12 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
                                                     <IconFileText className="h-5 w-5 text-primary" />
                                                 </div>
                                                 <div>
-                                                    <p className="font-sans font-medium">{approval.dokumen_version.nama_file}</p>
+                                                    <p className="font-sans font-medium">
+                                                        {approval.dokumen_version.nama_file}
+                                                        {approval.dokumen_version.signed_file_url && (
+                                                            <span className="ml-2 font-sans text-xs text-green-600">(Tertandatangani)</span>
+                                                        )}
+                                                    </p>
                                                     <p className="font-mono text-sm text-muted-foreground">
                                                         v{approval.dokumen_version.version} • {approval.dokumen_version.tipe_file.toUpperCase()}
                                                     </p>
@@ -377,6 +415,23 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
                                                         <p className="font-sans text-sm text-muted-foreground">
                                                             Disetujui pada {formatDate(app.tgl_approve)}
                                                         </p>
+                                                    )}
+
+                                                    {app.signature_url && app.approval_status === 'approved' && (
+                                                        <div className="mt-2">
+                                                            <p className="mb-1 font-sans text-xs text-muted-foreground">Tanda Tangan:</p>
+                                                            <div className="inline-flex rounded border bg-white p-2">
+                                                                <img
+                                                                    src={
+                                                                        app.signature_url.startsWith('http')
+                                                                            ? app.signature_url
+                                                                            : `${window.location.origin}${app.signature_url}`
+                                                                    }
+                                                                    alt="Signature"
+                                                                    className="h-12 max-w-[150px] object-contain"
+                                                                />
+                                                            </div>
+                                                        </div>
                                                     )}
 
                                                     {app.comment && (
@@ -529,21 +584,162 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
                         </DialogContent>
                     </Dialog>
 
-                    {/* PDF Preview Dialog */}
-                    <Dialog open={isPreviewDialogOpen} onOpenChange={setIsPreviewDialogOpen}>
+                    {/* PDF Preview Dialog with Signature */}
+                    <Dialog
+                        open={isPreviewDialogOpen}
+                        onOpenChange={(open) => {
+                            setIsPreviewDialogOpen(open);
+                            if (!open) {
+                                setShowSignaturePad(false);
+                                setSignatureData(null);
+                            }
+                        }}
+                    >
                         <DialogContent className="flex h-[90vh] max-w-[90vw] flex-col p-0">
                             <DialogHeader className="shrink-0 border-b p-4">
-                                <DialogTitle className="font-serif">Preview Dokumen</DialogTitle>
-                                <DialogDescription className="font-sans">{approval.dokumen_version?.nama_file}</DialogDescription>
+                                <div className="space-y-1">
+                                    <DialogTitle className="font-serif">Preview Dokumen</DialogTitle>
+                                    <DialogDescription className="font-sans">{approval.dokumen_version?.nama_file}</DialogDescription>
+                                    {/* Show status info */}
+                                    {approval.approval_status !== 'pending' && (
+                                        <div className="rounded-md bg-blue-50 p-2 text-xs text-blue-700">
+                                            Dokumen ini sudah {approval.approval_status === 'approved' ? 'disetujui' : 'ditolak'}.
+                                        </div>
+                                    )}
+                                    {!canApprove && approval.approval_status === 'pending' && (
+                                        <div className="rounded-md bg-yellow-50 p-2 text-xs text-yellow-700">
+                                            Approval ini bukan untuk Anda atau sedang menunggu giliran.
+                                        </div>
+                                    )}
+                                </div>
                             </DialogHeader>
-                            <div className="flex-1 overflow-auto p-4">
-                                {fileUrl && (
-                                    <PDFViewer
-                                        fileUrl={fileUrl}
-                                        fileName={approval.dokumen_version?.nama_file || 'document.pdf'}
-                                        showControls={true}
-                                        height="100%"
-                                    />
+
+                            <div className="flex flex-1 gap-4 overflow-hidden p-4">
+                                {/* PDF Preview - Left Side */}
+                                <div
+                                    className={`${canApprove && approval.approval_status === 'pending' ? 'flex-1' : 'w-full'} overflow-auto rounded-lg border`}
+                                >
+                                    {fileUrl && (
+                                        <PDFViewer
+                                            fileUrl={fileUrl}
+                                            fileName={approval.dokumen_version?.nama_file || 'document.pdf'}
+                                            showControls={true}
+                                            height="100%"
+                                        />
+                                    )}
+                                </div>
+
+                                {/* Signature Panel - Right Side - Only show for pending approvals that user can approve */}
+                                {canApprove && approval.approval_status === 'pending' && (
+                                    <div className="w-[400px] space-y-4 overflow-auto rounded-lg border bg-muted/20 p-4">
+                                        <div>
+                                            <h3 className="font-serif text-lg font-semibold">Tanda Tangan Persetujuan</h3>
+                                            <p className="font-sans text-sm text-muted-foreground">Tanda tangani dokumen untuk menyetujuinya</p>
+                                        </div>
+
+                                        <Separator />
+
+                                        {!showSignaturePad && !signatureData ? (
+                                            <div className="space-y-3">
+                                                <Card className="border-dashed">
+                                                    <CardContent className="flex flex-col items-center justify-center py-8">
+                                                        <IconPencil className="h-12 w-12 text-muted-foreground" />
+                                                        <p className="mt-2 text-center font-sans text-sm text-muted-foreground">
+                                                            Belum ada tanda tangan
+                                                        </p>
+                                                    </CardContent>
+                                                </Card>
+                                                <Button
+                                                    type="button"
+                                                    onClick={() => setShowSignaturePad(true)}
+                                                    className="w-full font-sans"
+                                                    variant="outline"
+                                                >
+                                                    <IconPencil className="mr-2 h-4 w-4" />
+                                                    Tambah Tanda Tangan
+                                                </Button>
+                                            </div>
+                                        ) : signatureData ? (
+                                            <div className="space-y-3">
+                                                <Card>
+                                                    <CardContent className="p-4">
+                                                        <div className="flex items-center justify-center rounded border bg-white p-4">
+                                                            <img src={signatureData} alt="Signature" className="max-h-24 max-w-full object-contain" />
+                                                        </div>
+                                                    </CardContent>
+                                                </Card>
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        onClick={() => {
+                                                            setSignatureData(null);
+                                                            setShowSignaturePad(true);
+                                                        }}
+                                                        className="flex-1 font-sans"
+                                                    >
+                                                        Ganti
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        onClick={() => {
+                                                            setSignatureData(null);
+                                                            approveForm.setData('signature', '');
+                                                        }}
+                                                        className="font-sans text-red-600 hover:bg-red-50"
+                                                    >
+                                                        <IconX className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <SignaturePad onSignatureComplete={handleSignatureComplete} onCancel={() => setShowSignaturePad(false)} />
+                                        )}
+
+                                        {signatureData && (
+                                            <>
+                                                <Separator />
+
+                                                <div className="space-y-3">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="preview-comment" className="font-sans">
+                                                            Komentar (Opsional)
+                                                        </Label>
+                                                        <Textarea
+                                                            id="preview-comment"
+                                                            placeholder="Tambahkan komentar jika diperlukan..."
+                                                            value={approveForm.data.comment}
+                                                            onChange={(e) => approveForm.setData('comment', e.target.value)}
+                                                            className="font-sans"
+                                                            rows={3}
+                                                        />
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <Button
+                                                            type="button"
+                                                            onClick={handleApprove}
+                                                            disabled={approveForm.processing}
+                                                            className="w-full font-sans"
+                                                        >
+                                                            <IconCheck className="mr-2 h-4 w-4" />
+                                                            {approveForm.processing ? 'Memproses...' : 'Setujui Dokumen'}
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            onClick={() => setIsPreviewDialogOpen(false)}
+                                                            className="w-full font-sans"
+                                                            disabled={approveForm.processing}
+                                                        >
+                                                            Batal
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         </DialogContent>

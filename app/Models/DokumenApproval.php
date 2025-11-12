@@ -33,6 +33,7 @@ class DokumenApproval extends Model
         'jenis_group',
         'alasan_reject',
         'comment',
+        'signature_path',
     ];
 
     /**
@@ -43,6 +44,13 @@ class DokumenApproval extends Model
         'tgl_deadline' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+    ];
+
+    /**
+     * The accessors to append to the model's array form.
+     */
+    protected $appends = [
+        'signature_url',
     ];
 
     /**
@@ -230,5 +238,17 @@ class DokumenApproval extends Model
     {
         return $query->join('masterflow_steps', 'dokumen_approval.masterflow_step_id', '=', 'masterflow_steps.id')
             ->orderBy('masterflow_steps.step_order');
+    }
+
+    /**
+     * Get the full URL of the signature file.
+     */
+    public function getSignatureUrlAttribute(): ?string
+    {
+        if (!$this->signature_path) {
+            return null;
+        }
+
+        return \Illuminate\Support\Facades\Storage::url($this->signature_path);
     }
 }
