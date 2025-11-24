@@ -25,19 +25,19 @@ const superAdminNavMain = [
         icon: LayoutDashboardIcon,
     },
     {
+        title: 'Profile',
+        url: '/profile',
+        icon: UserIcon,
+    },
+    {
         title: 'Dokumen Saya',
-        url: '/user/dokumen',
+        url: '/dokumen',
         icon: FileTextIcon,
     },
     {
-        title: 'Approvals',
+        title: 'Persetujuan Dokumen',
         url: '/approvals',
         icon: CheckSquareIcon,
-    },
-    {
-        title: 'Profile',
-        url: '/settings/profile',
-        icon: UserIcon,
     },
     {
         title: 'Role Management',
@@ -74,29 +74,24 @@ const adminNavMain = [
         icon: LayoutDashboardIcon,
     },
     {
+        title: 'Profile',
+        url: '/profile',
+        icon: UserIcon,
+    },
+    {
         title: 'Dokumen Saya',
-        url: '/user/dokumen',
+        url: '/dokumen',
         icon: FileTextIcon,
     },
     {
-        title: 'Approvals',
+        title: 'Persetujuan Dokumen',
         url: '/approvals',
         icon: CheckSquareIcon,
-    },
-    {
-        title: 'Profile',
-        url: '/settings/profile',
-        icon: UserIcon,
     },
     {
         title: 'Masterflow Management',
         url: '/admin/masterflows',
         icon: FolderKanbanIcon,
-    },
-    {
-        title: 'Dokumen',
-        url: '/admin/dokumen',
-        icon: FileTextIcon,
     },
 ];
 
@@ -108,19 +103,19 @@ const userNavMain = [
         icon: LayoutDashboardIcon,
     },
     {
+        title: 'Profile',
+        url: '/profile',
+        icon: UserIcon,
+    },
+    {
         title: 'Dokumen Saya',
-        url: '/user/dokumen',
+        url: '/dokumen',
         icon: FileTextIcon,
     },
     {
-        title: 'Approvals',
+        title: 'Persetujuan Dokumen',
         url: '/approvals',
         icon: CheckSquareIcon,
-    },
-    {
-        title: 'Profile',
-        url: '/settings/profile',
-        icon: UserIcon,
     },
 ];
 

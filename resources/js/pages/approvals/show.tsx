@@ -25,7 +25,7 @@ import {
     IconUser,
     IconX,
 } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface User {
     id: number;
@@ -100,7 +100,6 @@ interface Props {
 }
 
 export default function ApproverShow({ approval, allApprovals, canApprove }: Props) {
-    const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
     const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
     const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
     const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -115,6 +114,50 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
         alasan_reject: '',
         comment: '',
     });
+
+    // Real-time updates - Listen to dokumen-specific channel
+    useEffect(() => {
+        if (typeof window !== 'undefined' && window.Echo && approval?.dokumen?.id) {
+            console.log('📡 Setting up real-time listener for dokumen:', approval.dokumen.id);
+
+            const channelName = `dokumen.${approval.dokumen.id}`;
+            const channel = window.Echo.channel(channelName);
+
+            // Listen for dokumen updates
+            channel.listen('dokumen.updated', (event: any) => {
+                console.log('📡 Real-time dokumen update received on approval page:', event);
+
+                // Reload the page to get fresh approval data
+                router.reload({ preserveScroll: true });
+
+                // Show toast notification
+                if (event.dokumen?.judul_dokumen) {
+                    showToast.success(`📡 Dokumen "${event.dokumen.judul_dokumen}" telah diupdate!`);
+                }
+            });
+
+            // Monitor subscription
+            channel.subscribed(() => {
+                console.log('✅ Successfully subscribed to channel:', channelName);
+            });
+
+            channel.error((error: any) => {
+                console.error('❌ Channel subscription error:', error);
+            });
+
+            console.log('📻 Subscribed to channel:', channelName);
+
+            // Cleanup
+            return () => {
+                console.log('🔌 Leaving channel:', channelName);
+                window.Echo.leave(channelName);
+            };
+        } else {
+            if (!window.Echo) {
+                console.error('❌ window.Echo not initialized! Check app.tsx');
+            }
+        }
+    }, [approval?.dokumen?.id]);
 
     // Handle signature complete
     const handleSignatureComplete = (signature: string) => {
@@ -131,16 +174,27 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
             return;
         }
 
+        console.log('Submitting approval with signature:', {
+            signatureLength: signatureData.length,
+            signaturePreview: signatureData.substring(0, 50) + '...',
+            hasComment: !!approveForm.data.comment,
+        });
+
+        // Set signature to form data
+        approveForm.data.signature = signatureData;
+
         approveForm.post(route('approvals.approve', approval.id), {
             preserveScroll: true,
             onSuccess: () => {
                 showToast.success('✅ Dokumen berhasil disetujui!');
-                setIsApproveDialogOpen(false);
+                setIsPreviewDialogOpen(false);
                 setSignatureData(null);
                 setShowSignaturePad(false);
             },
-            onError: () => {
-                showToast.error('❌ Gagal menyetujui dokumen.');
+            onError: (errors: any) => {
+                console.error('Approval error:', errors);
+                const errorMessage = errors.error || errors.signature || errors.message || 'Gagal menyetujui dokumen';
+                showToast.error(`❌ ${errorMessage}`);
             },
         });
     };
@@ -476,9 +530,9 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
                                                 <IconX className="mr-2 h-4 w-4" />
                                                 Tolak
                                             </Button>
-                                            <Button onClick={() => setIsApproveDialogOpen(true)} className="font-sans">
+                                            <Button onClick={handlePreview} className="font-sans">
                                                 <IconCheck className="mr-2 h-4 w-4" />
-                                                Setujui
+                                                Setujui dengan Tanda Tangan
                                             </Button>
                                         </div>
                                     </CardContent>
@@ -486,43 +540,6 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
                             )}
                         </div>
                     </div>
-
-                    {/* Approve Dialog */}
-                    <Dialog open={isApproveDialogOpen} onOpenChange={setIsApproveDialogOpen}>
-                        <DialogContent>
-                            <DialogHeader>
-                                <DialogTitle className="font-serif">Setujui Dokumen</DialogTitle>
-                                <DialogDescription className="font-sans">
-                                    Apakah Anda yakin ingin menyetujui dokumen "{approval.dokumen.judul_dokumen}"?
-                                </DialogDescription>
-                            </DialogHeader>
-
-                            <div className="space-y-4 py-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="comment" className="font-sans">
-                                        Komentar (Opsional)
-                                    </Label>
-                                    <Textarea
-                                        id="comment"
-                                        placeholder="Tambahkan komentar jika diperlukan..."
-                                        value={approveForm.data.comment}
-                                        onChange={(e) => approveForm.setData('comment', e.target.value)}
-                                        className="font-sans"
-                                        rows={4}
-                                    />
-                                </div>
-                            </div>
-
-                            <DialogFooter>
-                                <Button type="button" variant="outline" onClick={() => setIsApproveDialogOpen(false)} className="font-sans">
-                                    Batal
-                                </Button>
-                                <Button type="button" onClick={handleApprove} disabled={approveForm.processing} className="font-sans">
-                                    {approveForm.processing ? 'Memproses...' : 'Setujui'}
-                                </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
 
                     {/* Reject Dialog */}
                     <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>

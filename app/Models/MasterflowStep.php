@@ -22,6 +22,9 @@ class MasterflowStep extends Model
         'step_name',
         'description',
         'is_required',
+        'group_index',
+        'jenis_group',
+        'users_in_group',
     ];
 
     /**
@@ -32,6 +35,7 @@ class MasterflowStep extends Model
     protected $casts = [
         'step_order' => 'integer',
         'is_required' => 'boolean',
+        'users_in_group' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -105,5 +109,37 @@ class MasterflowStep extends Model
     {
         $maxOrder = self::where('masterflow_id', $this->masterflow_id)->max('step_order');
         return $this->step_order === $maxOrder;
+    }
+
+    /**
+     * Scope a query to filter by group index.
+     */
+    public function scopeByGroup($query, string $groupIndex)
+    {
+        return $query->where('group_index', $groupIndex);
+    }
+
+    /**
+     * Check if this step has group approval enabled.
+     */
+    public function hasGroupApproval(): bool
+    {
+        return !is_null($this->group_index) && !is_null($this->jenis_group);
+    }
+
+    /**
+     * Get all users in this group.
+     */
+    public function getGroupUsers(): array
+    {
+        return $this->users_in_group ?? [];
+    }
+
+    /**
+     * Check if a user is in this group.
+     */
+    public function hasUserInGroup(int $userId): bool
+    {
+        return in_array($userId, $this->getGroupUsers());
     }
 }

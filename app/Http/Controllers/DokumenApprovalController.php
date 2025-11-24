@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\DokumenApproval;
 use App\Models\Dokumen;
 use App\Services\PdfSignatureService;
+use App\Services\ApprovalGroupValidator;
+use App\Events\DokumenUpdated;
+use App\Events\UserDokumenUpdated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -217,8 +220,43 @@ class DokumenApprovalController extends Controller
                 ]);
             }
 
-            // Check if all approvals are complete
+            // Check if all approvals are complete and handle group logic
+            Log::info('Checking document status after approval', [
+                'dokumen_id' => $approval->dokumen_id,
+                'approval_id' => $approval->id,
+                'group_index' => $approval->group_index,
+                'jenis_group' => $approval->jenis_group,
+            ]);
+
             $this->checkAndUpdateDocumentStatus($approval->dokumen);
+
+            // Broadcast dokumen updated event for real-time updates
+            $freshDokumen = $approval->dokumen->fresh([
+                'user',
+                'company',
+                'aplikasi',
+                'masterflow.steps.jabatan',
+                'versions',
+                'approvals.user.profile',
+                'approvals.masterflowStep.jabatan'
+            ]);
+
+            // Broadcast to detail page viewers
+            Log::info('Broadcasting DokumenUpdated event', [
+                'dokumen_id' => $freshDokumen->id,
+                'channel' => 'dokumen.' . $freshDokumen->id,
+                'event' => 'dokumen.updated'
+            ]);
+            broadcast(new DokumenUpdated($freshDokumen))->toOthers();
+
+            // Broadcast to dokumen owner's list page
+            Log::info('Broadcasting UserDokumenUpdated event', [
+                'dokumen_id' => $freshDokumen->id,
+                'user_id' => $freshDokumen->user_id,
+                'channel' => 'user.' . $freshDokumen->user_id . '.dokumen',
+                'event' => 'dokumen.updated'
+            ]);
+            broadcast(new UserDokumenUpdated($freshDokumen))->toOthers();
 
             DB::commit();
 
@@ -226,6 +264,11 @@ class DokumenApprovalController extends Controller
                 ->with('success', 'Dokumen berhasil di-approve dan ditandatangani!');
         } catch (\Exception $e) {
             DB::rollback();
+            Log::error('Approval failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'approval_id' => $approval->id,
+            ]);
             return back()->withErrors(['error' => 'Gagal melakukan approval: ' . $e->getMessage()]);
         }
     }
@@ -263,6 +306,34 @@ class DokumenApprovalController extends Controller
                 'user_id' => Auth::id(),
                 'created_at_custom' => now(),
             ]);
+
+            // Broadcast dokumen updated event for real-time updates
+            $freshDokumen = $approval->dokumen->fresh([
+                'user',
+                'company',
+                'aplikasi',
+                'masterflow.steps.jabatan',
+                'versions',
+                'approvals.user.profile',
+                'approvals.masterflowStep.jabatan'
+            ]);
+
+            // Broadcast to detail page viewers
+            Log::info('Broadcasting DokumenUpdated event (reject)', [
+                'dokumen_id' => $freshDokumen->id,
+                'channel' => 'dokumen.' . $freshDokumen->id,
+                'event' => 'dokumen.updated'
+            ]);
+            broadcast(new DokumenUpdated($freshDokumen))->toOthers();
+
+            // Broadcast to dokumen owner's list page
+            Log::info('Broadcasting UserDokumenUpdated event (reject)', [
+                'dokumen_id' => $freshDokumen->id,
+                'user_id' => $freshDokumen->user_id,
+                'channel' => 'user.' . $freshDokumen->user_id . '.dokumen',
+                'event' => 'dokumen.updated'
+            ]);
+            broadcast(new UserDokumenUpdated($freshDokumen))->toOthers();
 
             DB::commit();
 
@@ -441,7 +512,13 @@ class DokumenApprovalController extends Controller
      */
     private function checkAndUpdateDocumentStatus(Dokumen $dokumen)
     {
+        $validator = new ApprovalGroupValidator();
         $allApprovals = $dokumen->approvals;
+
+        Log::info('Starting document status check', [
+            'dokumen_id' => $dokumen->id,
+            'total_approvals' => $allApprovals->count(),
+        ]);
 
         // Check if any approval is rejected
         if ($allApprovals->contains('approval_status', 'rejected')) {
@@ -449,26 +526,112 @@ class DokumenApprovalController extends Controller
                 'status' => 'rejected',
                 'status_current' => 'rejected',
             ]);
+            Log::info('Document rejected - at least one approval is rejected');
             return;
         }
 
-        // Check if all required approvals are complete
-        $requiredApprovals = $allApprovals->filter(function ($approval) {
-            return $approval->masterflowStep->is_required;
-        });
+        // Group approvals by group_index
+        $groupedApprovals = $allApprovals->groupBy('group_index');
 
-        $completedRequired = $requiredApprovals->filter(function ($approval) {
-            return in_array($approval->approval_status, ['approved', 'skipped']);
-        });
+        Log::info('Grouped approvals', [
+            'groups_count' => $groupedApprovals->count(),
+            'group_indices' => $groupedApprovals->keys()->toArray(),
+        ]);
 
-        if ($requiredApprovals->count() === $completedRequired->count()) {
-            // All required approvals are complete
+        // Track which groups are complete
+        $allGroupsComplete = true;
+        $hasAnyRejected = false;
+
+        foreach ($groupedApprovals as $groupIndex => $groupApprovals) {
+            // Skip if group_index is null (single approver, not a group)
+            if (is_null($groupIndex)) {
+                Log::info('Processing single approvers (no group)', [
+                    'count' => $groupApprovals->count(),
+                ]);
+
+                // For single approvers, check individually
+                foreach ($groupApprovals as $approval) {
+                    if ($approval->masterflowStep && $approval->masterflowStep->is_required) {
+                        if (!in_array($approval->approval_status, ['approved', 'skipped'])) {
+                            $allGroupsComplete = false;
+                        }
+                        if ($approval->approval_status === 'rejected') {
+                            $hasAnyRejected = true;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Check group completion using validator
+            Log::info('Checking group completion', [
+                'group_index' => $groupIndex,
+                'members_count' => $groupApprovals->count(),
+                'jenis_group' => $groupApprovals->first()->jenis_group,
+            ]);
+
+            $groupStatus = $validator->isGroupComplete($dokumen->id, $groupIndex);
+
+            Log::info('Group status result', [
+                'group_index' => $groupIndex,
+                'is_complete' => $groupStatus['is_complete'],
+                'status' => $groupStatus['status'],
+                'details' => $groupStatus['details'],
+            ]);
+
+            if (!$groupStatus['is_complete']) {
+                $allGroupsComplete = false;
+            } else {
+                if ($groupStatus['status'] === 'rejected') {
+                    $hasAnyRejected = true;
+                } elseif ($groupStatus['status'] === 'approved') {
+                    // Auto-skip pending approvals in completed groups (for any_one or majority)
+                    $jenisGroup = $groupApprovals->first()->jenis_group;
+
+                    if (in_array($jenisGroup, ['any_one', 'majority'])) {
+                        // Skip remaining pending approvals in this group
+                        $pendingApprovals = $groupApprovals->where('approval_status', 'pending');
+
+                        Log::info('Auto-skipping pending approvals in completed group', [
+                            'group_index' => $groupIndex,
+                            'jenis_group' => $jenisGroup,
+                            'pending_count' => $pendingApprovals->count(),
+                        ]);
+
+                        $pendingApprovals->each(function ($approval) {
+                            $approval->update([
+                                'approval_status' => 'skipped',
+                                'tgl_approve' => now(),
+                                'comment' => 'Otomatis di-skip karena grup sudah menyelesaikan approval.',
+                            ]);
+
+                            Log::info('Skipped approval', [
+                                'approval_id' => $approval->id,
+                                'user_id' => $approval->user_id,
+                            ]);
+                        });
+                    }
+                }
+            }
+        }
+
+        // Update document status based on group completions
+        if ($hasAnyRejected) {
+            Log::info('Document status: rejected');
+            $dokumen->update([
+                'status' => 'rejected',
+                'status_current' => 'rejected',
+            ]);
+        } elseif ($allGroupsComplete) {
+            // All required groups are complete
+            Log::info('Document status: fully approved');
             $dokumen->update([
                 'status' => 'approved',
                 'status_current' => 'fully_approved',
             ]);
         } else {
             // Still waiting for approvals
+            Log::info('Document status: waiting for approvals');
             $dokumen->update([
                 'status' => 'under_review',
                 'status_current' => 'waiting_approval',

@@ -76,6 +76,15 @@ api.interceptors.request.use(async (config) => {
     
     console.log('Session token found:', getSessionToken() ? 'Yes' : 'No');
     
+    // Add Socket ID for broadcasting exclusion (toOthers)
+    if (typeof window !== 'undefined' && window.Echo) {
+        const socketId = window.Echo.socketId();
+        if (socketId) {
+            config.headers['X-Socket-ID'] = socketId;
+            console.log('Using X-Socket-ID:', socketId);
+        }
+    }
+    
     // Also support Bearer token for API token auth (backward compatibility)
     const token = localStorage.getItem('auth-token');
     if (token) {

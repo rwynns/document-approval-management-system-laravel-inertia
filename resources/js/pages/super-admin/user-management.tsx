@@ -589,7 +589,7 @@ export default function UserManagement() {
 
                                 <div className="space-y-2">
                                     <Label htmlFor="pin" className="font-sans">
-                                        PIN (8 digit) - Boleh sama dengan user lain
+                                        PIN (8 digit)
                                     </Label>
                                     <div className="relative">
                                         <Input

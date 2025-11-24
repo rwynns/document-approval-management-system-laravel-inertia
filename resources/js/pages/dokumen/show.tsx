@@ -173,8 +173,15 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
         try {
             const response = await api.get(`/dokumen/${dokumen.id}`);
             console.log('Fetched dokumen:', response.data);
-            setDokumen(response.data);
-            return response.data;
+
+            // Check if response has dokumen data
+            if (response.data && response.data.id) {
+                setDokumen(response.data);
+                return response.data;
+            } else {
+                console.warn('Invalid dokumen data received:', response.data);
+                return null;
+            }
         } catch (error) {
             console.error('Error fetching dokumen:', error);
             return null;
@@ -193,7 +200,32 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
 
     useEffect(() => {
         fetchMasterflows();
-    }, []);
+
+        // Real-time updates dengan Laravel Reverb (via Echo)
+        if (typeof window !== 'undefined' && window.Echo && dokumen.id) {
+            console.log('📡 Setting up real-time listener for dokumen:', dokumen.id);
+
+            const channelName = `dokumen.${dokumen.id}`;
+
+            window.Echo.channel(channelName).listen('dokumen.updated', (event: any) => {
+                console.log('📡 Real-time update received:', event);
+
+                // Update dokumen state dengan data terbaru
+                if (event.dokumen && event.dokumen.id === dokumen.id) {
+                    setDokumen(event.dokumen);
+
+                    // Tampilkan notifikasi toast
+                    showToast.success('📡 Dokumen telah diupdate secara real-time!');
+                }
+            });
+
+            // Cleanup saat component unmount
+            return () => {
+                console.log('🔌 Leaving channel:', channelName);
+                window.Echo.leave(channelName);
+            };
+        }
+    }, [dokumen.id]);
 
     // Calculate approval progress
     const getApprovalProgress = () => {
@@ -202,7 +234,7 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
         }
 
         const total = dokumen.approvals.length;
-        const approved = dokumen.approvals.filter((a) => a.approval_status === 'approved').length;
+        const approved = dokumen.approvals.filter((a) => a.approval_status === 'approved' || a.approval_status === 'skipped').length;
         const pending = dokumen.approvals.filter((a) => a.approval_status === 'pending').length;
         const rejected = dokumen.approvals.filter((a) => a.approval_status === 'rejected').length;
         const percentage = (approved / total) * 100;
@@ -263,6 +295,7 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
         const statusConfig: Record<string, { label: string; className: string }> = {
             pending: { label: 'Menunggu', className: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
             approved: { label: 'Disetujui', className: 'bg-green-100 text-green-800 border-green-300' },
+            skipped: { label: 'Disetujui', className: 'bg-green-100 text-green-800 border-green-300' },
             rejected: { label: 'Ditolak', className: 'bg-red-100 text-red-800 border-red-300' },
             waiting: { label: 'Menunggu Giliran', className: 'bg-gray-100 text-gray-800 border-gray-300' },
         };
@@ -763,7 +796,7 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                                 <div
                                                     key={approval.id}
                                                     className={`flex items-start gap-4 rounded-lg border p-4 ${
-                                                        approval.approval_status === 'approved'
+                                                        approval.approval_status === 'approved' || approval.approval_status === 'skipped'
                                                             ? 'border-green-200 bg-green-50/50'
                                                             : approval.approval_status === 'rejected'
                                                               ? 'border-red-200 bg-red-50/50'
@@ -773,7 +806,7 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                                     {/* Step Number */}
                                                     <div
                                                         className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full font-mono text-sm font-bold ${
-                                                            approval.approval_status === 'approved'
+                                                            approval.approval_status === 'approved' || approval.approval_status === 'skipped'
                                                                 ? 'bg-green-600 text-white'
                                                                 : approval.approval_status === 'rejected'
                                                                   ? 'bg-red-600 text-white'
@@ -812,8 +845,10 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                                         {approval.tgl_approve && (
                                                             <p className="text-xs text-muted-foreground">
                                                                 <ClockIcon className="mr-1 inline h-3 w-3" />
-                                                                {approval.approval_status === 'approved' ? 'Disetujui' : 'Ditolak'} pada{' '}
-                                                                {formatDate(approval.tgl_approve)}
+                                                                {approval.approval_status === 'approved' || approval.approval_status === 'skipped'
+                                                                    ? 'Disetujui'
+                                                                    : 'Ditolak'}{' '}
+                                                                pada {formatDate(approval.tgl_approve)}
                                                             </p>
                                                         )}
 

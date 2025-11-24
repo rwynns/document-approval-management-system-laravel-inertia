@@ -6,9 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Head, router } from '@inertiajs/react';
+import { showToast } from '@/lib/toast';
+import { Head, router, usePage } from '@inertiajs/react';
 import { IconAlertCircle, IconCalendar, IconCheck, IconClock, IconEye, IconFileText, IconSearch, IconUser, IconX } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface User {
     id: number;
@@ -89,8 +90,214 @@ interface Props {
 }
 
 export default function ApproverIndex({ approvals, stats, filters }: Props) {
+    const { auth } = usePage().props as any;
     const [search, setSearch] = useState(filters.search || '');
     const [selectedTab, setSelectedTab] = useState(filters.status || 'all');
+    const [approvalsData, setApprovalsData] = useState<DokumenApproval[]>(approvals.data);
+    const [statsData, setStatsData] = useState<Stats>(stats);
+    const [updatedApprovalIds, setUpdatedApprovalIds] = useState<Set<number>>(new Set()); // Track recently updated approvals
+
+    // Update local state when props change (e.g., pagination, filter)
+    useEffect(() => {
+        setApprovalsData(approvals.data);
+        setStatsData(stats);
+    }, [approvals.data, stats]);
+
+    // Real-time updates - Listen to all dokumen channels that user is approving
+    useEffect(() => {
+        if (typeof window !== 'undefined' && window.Echo && auth.user?.id) {
+            console.log('📡 Setting up real-time listeners for approvals');
+
+            // 1. Subscribe to user-specific approvals channel for NEW dokumen
+            const userApprovalChannelName = `user.${auth.user.id}.approvals`;
+            console.log('🔧 Subscribing to user approvals channel:', userApprovalChannelName);
+            const userChannel = window.Echo.channel(userApprovalChannelName);
+
+            // DIRECT BINDING to channel (not just Echo.listen)
+            if (window.Echo.connector?.pusher) {
+                const pusherChannel = window.Echo.connector.pusher.subscribe(userApprovalChannelName);
+
+                pusherChannel.bind('approval.created', (event: any) => {
+                    console.log('🎉🎉🎉 APPROVAL.CREATED EVENT RECEIVED VIA PUSHER! 🎉🎉🎉');
+                    console.log('🆕 Event data:', event);
+
+                    // Add new approval to the list
+                    if (event.approval) {
+                        setApprovalsData((prevApprovals) => {
+                            // Check if approval already exists
+                            const exists = prevApprovals.some((a) => a.id === event.approval.id);
+                            if (exists) {
+                                console.log('Approval already exists, skipping');
+                                return prevApprovals;
+                            }
+
+                            console.log('✨ Adding new approval to list');
+                            return [event.approval, ...prevApprovals]; // Add to beginning
+                        });
+
+                        // Update stats
+                        setStatsData((prevStats) => ({
+                            ...prevStats,
+                            pending: prevStats.pending + 1,
+                        }));
+
+                        // Highlight new approval
+                        setUpdatedApprovalIds((prev) => new Set(prev).add(event.approval.id));
+                        setTimeout(() => {
+                            setUpdatedApprovalIds((prev) => {
+                                const newSet = new Set(prev);
+                                newSet.delete(event.approval.id);
+                                return newSet;
+                            });
+                        }, 3000); // Longer highlight for new approvals
+
+                        // Show toast
+                        if (event.approval.dokumen?.judul_dokumen) {
+                            showToast.success(`🆕 Dokumen baru "${event.approval.dokumen.judul_dokumen}" perlu persetujuan Anda!`);
+                        }
+                    }
+                });
+
+                console.log('✅ Direct Pusher binding set for approval.created on channel:', userApprovalChannelName);
+            }
+
+            // ALSO use Echo.listen as fallback
+            userChannel.listen('approval.created', (event: any) => {
+                console.log('🎉 APPROVAL.CREATED via Echo.listen:', event);
+            });
+
+            userChannel.subscribed(() => {
+                console.log('✅ Subscribed to user approvals channel:', userApprovalChannelName);
+            });
+
+            userChannel.error((error: any) => {
+                console.error('❌ User approvals channel subscription error:', error);
+            });
+
+            // 2. Subscribe to each existing dokumen channel for UPDATES
+            const dokumenChannels: string[] = [];
+
+            if (approvalsData.length > 0) {
+                approvalsData.forEach((approval) => {
+                    const channelName = `dokumen.${approval.dokumen_id}`;
+                    if (!dokumenChannels.includes(channelName)) {
+                        dokumenChannels.push(channelName);
+
+                        const channel = window.Echo.channel(channelName);
+
+                        channel.listen('dokumen.updated', (event: any) => {
+                            console.log('📡 Real-time dokumen update received on approvals page:', event);
+
+                            // Update approvals state smoothly (no full refresh)
+                            if (event.dokumen?.id) {
+                                console.log('🔄 Updating approval state smoothly for dokumen ID:', event.dokumen.id);
+
+                                setApprovalsData((prevApprovals) => {
+                                    const updatedApprovals = prevApprovals.map((approval) => {
+                                        if (approval.dokumen_id === event.dokumen.id) {
+                                            console.log('✨ Found matching approval, updating dokumen data');
+
+                                            // Find the matching approval in the event data
+                                            const updatedApproval = event.dokumen.approvals?.find((a: any) => a.id === approval.id);
+
+                                            return {
+                                                ...approval,
+                                                dokumen: {
+                                                    ...approval.dokumen,
+                                                    ...event.dokumen,
+                                                    user: event.dokumen.user || approval.dokumen.user,
+                                                    latest_version:
+                                                        event.dokumen.latestVersion ||
+                                                        event.dokumen.latest_version ||
+                                                        approval.dokumen.latest_version,
+                                                },
+                                                approval_status: updatedApproval?.approval_status || approval.approval_status,
+                                            };
+                                        }
+                                        return approval;
+                                    });
+
+                                    console.log('✅ Approvals state updated smoothly');
+                                    return updatedApprovals;
+                                });
+
+                                // Update stats if approval status changed
+                                if (event.dokumen.approvals) {
+                                    const userApproval = event.dokumen.approvals.find((a: any) => a.user_id === auth.user.id);
+
+                                    if (userApproval) {
+                                        setStatsData((prevStats) => {
+                                            // Find old status
+                                            const oldApproval = approvalsData.find((a) => a.dokumen_id === event.dokumen.id);
+
+                                            if (!oldApproval) return prevStats;
+
+                                            const newStats = { ...prevStats };
+
+                                            // Decrease old status count
+                                            if (oldApproval.approval_status === 'pending') newStats.pending--;
+                                            else if (oldApproval.approval_status === 'approved') newStats.approved--;
+                                            else if (oldApproval.approval_status === 'rejected') newStats.rejected--;
+
+                                            // Increase new status count
+                                            if (userApproval.approval_status === 'pending') newStats.pending++;
+                                            else if (userApproval.approval_status === 'approved') newStats.approved++;
+                                            else if (userApproval.approval_status === 'rejected') newStats.rejected++;
+
+                                            return newStats;
+                                        });
+                                    }
+                                }
+
+                                // Mark approval as recently updated for animation
+                                const matchingApproval = approvalsData.find((a) => a.dokumen_id === event.dokumen.id);
+                                if (matchingApproval) {
+                                    setUpdatedApprovalIds((prev) => new Set(prev).add(matchingApproval.id));
+
+                                    // Remove highlight after animation
+                                    setTimeout(() => {
+                                        setUpdatedApprovalIds((prev) => {
+                                            const newSet = new Set(prev);
+                                            newSet.delete(matchingApproval.id);
+                                            return newSet;
+                                        });
+                                    }, 2000);
+                                }
+                            }
+
+                            // Show toast
+                            if (event.dokumen?.judul_dokumen) {
+                                const statusText =
+                                    event.dokumen.status === 'approved'
+                                        ? 'telah disetujui'
+                                        : event.dokumen.status === 'rejected'
+                                          ? 'telah ditolak'
+                                          : 'telah diupdate';
+                                showToast.success(`📡 Dokumen "${event.dokumen.judul_dokumen}" ${statusText}!`);
+                            }
+                        });
+
+                        channel.subscribed(() => {
+                            console.log('✅ Subscribed to dokumen channel:', channelName);
+                        });
+                    }
+                });
+
+                console.log(`📻 Subscribed to ${dokumenChannels.length} dokumen channels`);
+            }
+
+            // Cleanup
+            return () => {
+                console.log('🔌 Leaving user approvals channel:', userApprovalChannelName);
+                window.Echo.leave(userApprovalChannelName);
+
+                dokumenChannels.forEach((channelName) => {
+                    console.log('🔌 Leaving dokumen channel:', channelName);
+                    window.Echo.leave(channelName);
+                });
+            };
+        }
+    }, [approvalsData.length, auth.user?.id]);
 
     // Handle search
     const handleSearch = (e: React.FormEvent) => {
@@ -179,7 +386,7 @@ export default function ApproverIndex({ approvals, stats, filters }: Props) {
                                         <IconClock className="h-4 w-4 text-yellow-600" />
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="font-mono text-2xl font-bold">{stats.pending}</div>
+                                        <div className="font-mono text-2xl font-bold">{statsData.pending}</div>
                                         <p className="font-sans text-xs text-muted-foreground">Perlu persetujuan</p>
                                     </CardContent>
                                 </Card>
@@ -190,7 +397,7 @@ export default function ApproverIndex({ approvals, stats, filters }: Props) {
                                         <IconCheck className="h-4 w-4 text-green-600" />
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="font-mono text-2xl font-bold">{stats.approved}</div>
+                                        <div className="font-mono text-2xl font-bold">{statsData.approved}</div>
                                         <p className="font-sans text-xs text-muted-foreground">Total disetujui</p>
                                     </CardContent>
                                 </Card>
@@ -201,7 +408,7 @@ export default function ApproverIndex({ approvals, stats, filters }: Props) {
                                         <IconX className="h-4 w-4 text-red-600" />
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="font-mono text-2xl font-bold">{stats.rejected}</div>
+                                        <div className="font-mono text-2xl font-bold">{statsData.rejected}</div>
                                         <p className="font-sans text-xs text-muted-foreground">Total ditolak</p>
                                     </CardContent>
                                 </Card>
@@ -212,7 +419,7 @@ export default function ApproverIndex({ approvals, stats, filters }: Props) {
                                         <IconAlertCircle className="h-4 w-4 text-orange-600" />
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="font-mono text-2xl font-bold">{stats.overdue}</div>
+                                        <div className="font-mono text-2xl font-bold">{statsData.overdue}</div>
                                         <p className="font-sans text-xs text-muted-foreground">Melewati deadline</p>
                                     </CardContent>
                                 </Card>
@@ -249,18 +456,18 @@ export default function ApproverIndex({ approvals, stats, filters }: Props) {
                                                 Semua
                                             </TabsTrigger>
                                             <TabsTrigger value="pending" className="font-sans">
-                                                Menunggu ({stats.pending})
+                                                Menunggu ({statsData.pending})
                                             </TabsTrigger>
                                             <TabsTrigger value="approved" className="font-sans">
-                                                Disetujui ({stats.approved})
+                                                Disetujui ({statsData.approved})
                                             </TabsTrigger>
                                             <TabsTrigger value="rejected" className="font-sans">
-                                                Ditolak ({stats.rejected})
+                                                Ditolak ({statsData.rejected})
                                             </TabsTrigger>
                                         </TabsList>
 
                                         <TabsContent value={selectedTab} className="mt-6 space-y-4">
-                                            {approvals.data.length === 0 ? (
+                                            {approvalsData.length === 0 ? (
                                                 <div className="py-12 text-center">
                                                     <IconFileText className="mx-auto h-12 w-12 text-muted-foreground" />
                                                     <h3 className="mt-4 font-serif text-lg font-semibold">Tidak ada dokumen</h3>
@@ -270,8 +477,15 @@ export default function ApproverIndex({ approvals, stats, filters }: Props) {
                                                 </div>
                                             ) : (
                                                 <div className="space-y-3">
-                                                    {approvals.data.map((approval) => (
-                                                        <Card key={approval.id} className="transition-shadow hover:shadow-md">
+                                                    {approvalsData.map((approval) => (
+                                                        <Card
+                                                            key={approval.id}
+                                                            className={`transition-all duration-500 hover:shadow-md ${
+                                                                updatedApprovalIds.has(approval.id)
+                                                                    ? 'bg-green-50 shadow-md dark:bg-green-950/20'
+                                                                    : ''
+                                                            }`}
+                                                        >
                                                             <CardContent className="p-4">
                                                                 <div className="flex items-start justify-between gap-4">
                                                                     <div className="flex-1 space-y-2">

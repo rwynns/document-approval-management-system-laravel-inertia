@@ -19,10 +19,17 @@ return new class extends Migration
             $table->string('step_name'); // Nama langkah (contoh: "Supervisor Approval")
             $table->text('description')->nullable(); // Deskripsi langkah
             $table->boolean('is_required')->default(true); // Apakah langkah ini wajib
+
+            // Group approval fields for parallel approvals
+            $table->string('group_index')->nullable(); // For parallel approval groups (e.g., "step_1_group_A")
+            $table->enum('jenis_group', ['all_required', 'any_one', 'majority'])->nullable(); // Group approval type
+            $table->json('users_in_group')->nullable(); // Array of user IDs in this group
+
             $table->timestamps();
 
             // Index untuk performance
             $table->index(['masterflow_id', 'step_order']);
+            $table->index('group_index'); // Index for group queries
         });
     }
 

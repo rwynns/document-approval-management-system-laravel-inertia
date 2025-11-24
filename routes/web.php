@@ -106,23 +106,37 @@ Route::middleware(['auth', 'check.role:User'])->group(function () {
     Route::get('/user/statistics', [UserDashboardController::class, 'getStatistics'])->name('user.statistics');
     Route::get('/user/recent-documents', [UserDashboardController::class, 'getRecentDocuments'])->name('user.recent-documents');
     Route::get('/user/masterflows', [UserDashboardController::class, 'getMasterflows'])->name('user.masterflows');
-
-    // User Document Management Page
-    Route::get('/user/dokumen', function () {
-        return Inertia::render('user/dokumen');
-    })->name('user.dokumen');
 });
 
 // Document Management Routes (Available for all authenticated users)
 Route::middleware(['auth'])->group(function () {
-    // Document CRUD
-    Route::resource('dokumen', \App\Http\Controllers\DokumenController::class);
+    // Document pages (Inertia) - Must be defined BEFORE API routes to avoid conflicts
+    Route::get('/dokumen', function () {
+        return Inertia::render('dokumen/index');
+    })->name('dokumen.page');
 
-    // Document workflow actions
-    Route::post('dokumen/{dokumen}/submit', [\App\Http\Controllers\DokumenController::class, 'submit'])->name('dokumen.submit');
-    Route::post('dokumen/{dokumen}/cancel', [\App\Http\Controllers\DokumenController::class, 'cancel'])->name('dokumen.cancel');
-    Route::get('dokumen/{dokumen}/download/{version}', [\App\Http\Controllers\DokumenController::class, 'download'])->name('dokumen.download');
+    // Document API endpoints with /api prefix to avoid conflicts with page routes
+    Route::prefix('api/dokumen')->group(function () {
+        Route::get('/', [\App\Http\Controllers\DokumenController::class, 'index'])->name('dokumen.index');
+        Route::post('/', [\App\Http\Controllers\DokumenController::class, 'store'])->name('dokumen.store');
+        Route::get('/{dokumen}', [\App\Http\Controllers\DokumenController::class, 'show'])->name('dokumen.show');
+        Route::put('/{dokumen}', [\App\Http\Controllers\DokumenController::class, 'update'])->name('dokumen.update');
+        Route::delete('/{dokumen}', [\App\Http\Controllers\DokumenController::class, 'destroy'])->name('dokumen.destroy');
 
+        // Document workflow actions
+        Route::post('/{dokumen}/submit', [\App\Http\Controllers\DokumenController::class, 'submit'])->name('dokumen.submit');
+        Route::post('/{dokumen}/cancel', [\App\Http\Controllers\DokumenController::class, 'cancel'])->name('dokumen.cancel');
+        Route::get('/{dokumen}/download/{version}', [\App\Http\Controllers\DokumenController::class, 'download'])->name('dokumen.download');
+    });
+
+    // Document detail page
+    Route::get('/dokumen/{id}', function ($id) {
+        return Inertia::render('dokumen/show', ['id' => $id]);
+    })->where('id', '[0-9]+')->name('dokumen.detail');
+});
+
+// Other Document Related Routes
+Route::middleware(['auth'])->group(function () {
     // Document versions
     Route::resource('dokumen.versions', \App\Http\Controllers\DokumenVersionController::class)
         ->except(['index', 'show'])
@@ -184,3 +198,4 @@ Route::get('/spa/role-management', function () {
 require __DIR__ . '/settings.php';
 require __DIR__ . '/auth.php';
 require __DIR__ . '/debug.php';
+require __DIR__ . '/test-broadcast.php';

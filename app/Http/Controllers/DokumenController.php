@@ -7,6 +7,7 @@ use App\Models\DokumenVersion;
 use App\Models\DokumenApproval;
 use App\Models\Masterflow;
 use App\Models\Comment;
+use App\Events\ApprovalCreated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -87,11 +88,10 @@ class DokumenController extends Controller
             });
         }
 
-        $dokumen = $query->paginate(15)->withQueryString();
+        $dokumen = $query->get();
 
-        return Inertia::render('Dokumen/Index', [
-            'dokumen' => $dokumen,
-            'filters' => $request->only(['status', 'status_current', 'my_documents', 'search']),
+        return response()->json([
+            'data' => $dokumen,
         ]);
     }
 
@@ -136,8 +136,13 @@ class DokumenController extends Controller
             $rules['custom_approvers.*.order'] = 'required|integer|min:1';
         } else {
             $rules['masterflow_id'] = 'required|exists:masterflows,id';
-            $rules['approvers'] = 'required|array';
-            $rules['approvers.*'] = 'required|exists:users,id';
+            // Accept both single approvers and group approvers
+            $rules['approvers'] = 'nullable|array';
+            $rules['approvers.*'] = 'nullable|exists:users,id';
+            $rules['step_approvers'] = 'nullable|array';
+            $rules['step_approvers.*.jenis_group'] = 'required|in:all_required,any_one,majority';
+            $rules['step_approvers.*.user_ids'] = 'required|array|min:1';
+            $rules['step_approvers.*.user_ids.*'] = 'required|exists:users,id';
         }
 
         $validated = $request->validate($rules);
@@ -210,16 +215,72 @@ class DokumenController extends Controller
                     // Existing masterflow - create approvals from selected approvers
                     $masterflow = Masterflow::with('steps')->find($validated['masterflow_id']);
 
+                    Log::info('Processing masterflow steps', [
+                        'masterflow_id' => $masterflow->id,
+                        'steps_count' => $masterflow->steps->count(),
+                        'has_step_approvers' => $request->has('step_approvers'),
+                        'step_approvers_keys' => $request->has('step_approvers') ? array_keys($request->input('step_approvers', [])) : [],
+                    ]);
+
                     foreach ($masterflow->steps as $step) {
-                        if (isset($validated['approvers'][$step->id])) {
-                            DokumenApproval::create([
-                                'dokumen_id' => $dokumen->id,
-                                'user_id' => $validated['approvers'][$step->id],
-                                'masterflow_step_id' => $step->id,
-                                'dokumen_version_id' => $version->id,
-                                'approval_status' => 'pending',
-                                'tgl_deadline' => $validated['tgl_deadline'],
+                        // Check if user selected group approval for this step
+                        if ($request->has("step_approvers.{$step->id}")) {
+                            $stepApprover = $request->input("step_approvers.{$step->id}");
+                            $groupIndex = 'user_selected_' . $dokumen->id . '_' . $step->id;
+
+                            Log::info('Creating group approval', [
+                                'step_id' => $step->id,
+                                'group_index' => $groupIndex,
+                                'jenis_group' => $stepApprover['jenis_group'],
+                                'user_ids' => $stepApprover['user_ids'],
                             ]);
+
+                            // Create approval records for all selected users in the group
+                            foreach ($stepApprover['user_ids'] as $userId) {
+                                $approval = DokumenApproval::create([
+                                    'dokumen_id' => $dokumen->id,
+                                    'user_id' => $userId,
+                                    'masterflow_step_id' => $step->id,
+                                    'dokumen_version_id' => $version->id,
+                                    'approval_status' => 'pending',
+                                    'tgl_deadline' => $validated['tgl_deadline'],
+                                    'group_index' => $groupIndex,
+                                    'jenis_group' => $stepApprover['jenis_group'],
+                                ]);
+
+                                // Broadcast new approval event
+                                Log::info('Broadcasting ApprovalCreated event', [
+                                    'approval_id' => $approval->id,
+                                    'user_id' => $userId,
+                                    'dokumen_id' => $dokumen->id,
+                                ]);
+                                broadcast(new ApprovalCreated($approval))->toOthers();
+                            }
+                        } else {
+                            // Single approver selected by user
+                            if (isset($validated['approvers'][$step->id])) {
+                                Log::info('Creating single approval', [
+                                    'step_id' => $step->id,
+                                    'user_id' => $validated['approvers'][$step->id],
+                                ]);
+
+                                $approval = DokumenApproval::create([
+                                    'dokumen_id' => $dokumen->id,
+                                    'user_id' => $validated['approvers'][$step->id],
+                                    'masterflow_step_id' => $step->id,
+                                    'dokumen_version_id' => $version->id,
+                                    'approval_status' => 'pending',
+                                    'tgl_deadline' => $validated['tgl_deadline'],
+                                ]);
+
+                                // Broadcast new approval event
+                                Log::info('Broadcasting ApprovalCreated event', [
+                                    'approval_id' => $approval->id,
+                                    'user_id' => $validated['approvers'][$step->id],
+                                    'dokumen_id' => $dokumen->id,
+                                ]);
+                                broadcast(new ApprovalCreated($approval))->toOthers();
+                            }
                         }
                     }
                 }
@@ -231,13 +292,19 @@ class DokumenController extends Controller
                 ? 'Dokumen berhasil disimpan sebagai draft!'
                 : 'Dokumen berhasil disubmit untuk approval!';
 
-            return redirect()->route('user.dokumen')
-                ->with('success', $message);
+            // Return redirect back with success message (Inertia compatible)
+            return back()->with([
+                'success' => $message,
+                'dokumen' => $dokumen->load(['user', 'masterflow', 'latestVersion', 'approvals.user']),
+            ]);
         } catch (\Exception $e) {
             DB::rollback();
             Log::error('Error creating dokumen: ' . $e->getMessage());
-            return back()->withErrors(['error' => 'Gagal membuat dokumen: ' . $e->getMessage()])
-                ->withInput();
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+
+            return back()->withErrors([
+                'error' => 'Gagal membuat dokumen: ' . $e->getMessage(),
+            ])->withInput();
         }
     }
 
@@ -271,13 +338,13 @@ class DokumenController extends Controller
             'dokumen' => $dokumen->toArray()
         ]);
 
-        // If AJAX request, return JSON
-        if ($request->expectsJson() || $request->is('api/*')) {
+        // If API request (AJAX/Fetch), return JSON
+        if ($request->expectsJson() || $request->wantsJson()) {
             return response()->json($dokumen);
         }
 
-        // Otherwise return Inertia view
-        return Inertia::render('user/dokumen-detail', [
+        // Return Inertia view
+        return Inertia::render('dokumen/show', [
             'dokumen' => $dokumen,
         ]);
     }

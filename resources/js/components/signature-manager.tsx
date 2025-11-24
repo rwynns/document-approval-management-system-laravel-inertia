@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,6 +24,8 @@ export default function SignatureManager() {
     const [signatures, setSignatures] = useState<Signature[]>([]);
     const [loading, setLoading] = useState(false);
     const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [signatureToDelete, setSignatureToDelete] = useState<number | null>(null);
 
     // Fetch signatures on mount
     useEffect(() => {
@@ -250,8 +253,6 @@ export default function SignatureManager() {
     };
 
     const deleteSignature = async (signatureId: number) => {
-        if (!confirm('Are you sure you want to delete this signature?')) return;
-
         setLoading(true);
         try {
             const response = await fetch(route('signatures.destroy', signatureId), {
@@ -262,16 +263,29 @@ export default function SignatureManager() {
             });
 
             if (response.ok) {
-                showToast.success('✅ Signature deleted successfully');
+                showToast.success('✅ Tanda tangan berhasil dihapus');
                 fetchSignatures();
             } else {
                 const error = await response.json();
-                showToast.error(`❌ ${error.message || 'Failed to delete signature'}`);
+                showToast.error(`❌ ${error.message || 'Gagal menghapus tanda tangan'}`);
             }
         } catch (error) {
-            showToast.error('❌ An error occurred');
+            showToast.error('❌ Terjadi kesalahan');
         } finally {
             setLoading(false);
+            setDeleteDialogOpen(false);
+            setSignatureToDelete(null);
+        }
+    };
+
+    const handleDeleteClick = (signatureId: number) => {
+        setSignatureToDelete(signatureId);
+        setDeleteDialogOpen(true);
+    };
+
+    const confirmDelete = () => {
+        if (signatureToDelete) {
+            deleteSignature(signatureToDelete);
         }
     };
 
@@ -395,7 +409,7 @@ export default function SignatureManager() {
                                                 type="button"
                                                 variant="destructive"
                                                 size="sm"
-                                                onClick={() => deleteSignature(signature.id)}
+                                                onClick={() => handleDeleteClick(signature.id)}
                                                 disabled={loading}
                                             >
                                                 <Trash2 className="h-4 w-4" />
@@ -408,6 +422,26 @@ export default function SignatureManager() {
                     </CardContent>
                 </Card>
             )}
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle className="font-serif">Hapus Tanda Tangan</DialogTitle>
+                        <DialogDescription className="font-sans">
+                            Apakah Anda yakin ingin menghapus tanda tangan ini? Tindakan ini tidak dapat dibatalkan.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setDeleteDialogOpen(false)} className="font-sans" disabled={loading}>
+                            Batal
+                        </Button>
+                        <Button type="button" variant="destructive" onClick={confirmDelete} className="font-sans" disabled={loading}>
+                            {loading ? 'Menghapus...' : 'Hapus'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

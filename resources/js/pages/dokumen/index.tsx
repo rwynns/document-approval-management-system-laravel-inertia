@@ -39,6 +39,9 @@ interface MasterflowStep {
         id: number;
         name: string;
     };
+    group_index?: string | null;
+    jenis_group?: 'all_required' | 'any_one' | 'majority' | null;
+    users_in_group?: number[] | null;
 }
 
 interface UserOption {
@@ -88,6 +91,11 @@ interface CustomApprover {
     order: number;
 }
 
+interface StepApprovers {
+    userIds: number[];
+    jenisGroup: 'all_required' | 'any_one' | 'majority' | null;
+}
+
 interface FormData {
     nomor_dokumen: string;
     judul_dokumen: string;
@@ -96,8 +104,9 @@ interface FormData {
     tgl_deadline: string;
     deskripsi: string;
     file: File | null;
-    approvers: Record<number, number | ''>; // stepId -> userId (for existing masterflow)
+    approvers: Record<number, number | ''>; // stepId -> userId (for single approver mode)
     custom_approvers: CustomApprover[]; // for custom approvals
+    step_approvers: Record<number, StepApprovers>; // stepId -> { userIds, jenisGroup } (for group mode)
 }
 
 const initialFormData: FormData = {
@@ -110,6 +119,7 @@ const initialFormData: FormData = {
     file: null,
     approvers: {},
     custom_approvers: [{ email: '', order: 1 }],
+    step_approvers: {},
 };
 
 export default function UserDokumen() {
@@ -128,6 +138,8 @@ export default function UserDokumen() {
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [selectedMasterflow, setSelectedMasterflow] = useState<Masterflow | null>(null);
     const [availableApprovers, setAvailableApprovers] = useState<Record<number, UserOption[]>>({});
+    const [stepModes, setStepModes] = useState<Record<number, 'single' | 'group'>>({});
+    const [updatedDokumenIds, setUpdatedDokumenIds] = useState<Set<number>>(new Set()); // Track recently updated documents
 
     // Fetch dokumen from backend
     const fetchDokumen = async () => {
@@ -143,7 +155,18 @@ export default function UserDokumen() {
             });
 
             console.log('Dokumen fetched:', response.data);
-            setDokumen(response.data.data || response.data);
+            const newDokumen = response.data.data || response.data;
+            console.log('📊 Total dokumen received:', newDokumen.length);
+            console.log(
+                '📊 Dokumen list:',
+                newDokumen.map((d: Dokumen) => ({
+                    id: d.id,
+                    judul: d.judul_dokumen,
+                    status: d.status,
+                })),
+            );
+            setDokumen(newDokumen);
+            console.log('✅ State updated with new dokumen data');
         } catch (error) {
             console.error('Error fetching dokumen:', error);
             showToast.error('❌ Failed to load documents. Please try again.');
@@ -176,6 +199,210 @@ export default function UserDokumen() {
         console.log('Authenticated user found, loading data');
         fetchDokumen();
         fetchMasterflows();
+
+        // Real-time updates dengan Laravel Reverb untuk user-specific dokumen
+        if (typeof window !== 'undefined' && window.Echo && auth.user?.id) {
+            console.log('📡 Setting up real-time listener for user dokumen:', auth.user.id);
+
+            // Listen to user-specific channel untuk dokumen mereka
+            const userChannelName = `user.${auth.user.id}.dokumen`;
+
+            console.log('🔧 Creating channel:', userChannelName);
+            const channel = window.Echo.channel(userChannelName);
+
+            console.log('🔧 Channel object:', channel);
+            console.log('🔧 Echo instance:', window.Echo);
+
+            // ALTERNATIVE: Listen directly on Pusher channel
+            if (window.Echo.connector?.pusher) {
+                const pusherChannel = window.Echo.connector.pusher.subscribe(userChannelName);
+
+                console.log('🔧 Pusher channel subscribed:', pusherChannel);
+
+                // Listen on Pusher channel directly
+                pusherChannel.bind('dokumen.updated', (event: any) => {
+                    console.log('🎉🎉🎉 PUSHER DIRECT LISTENER TRIGGERED! 🎉🎉🎉');
+                    console.log('📡 Real-time dokumen update received:', event);
+                    console.log('📡 Event data:', JSON.stringify(event, null, 2));
+
+                    // Update dokumen in state smoothly (no full refresh)
+                    if (event.dokumen?.id) {
+                        console.log('🔄 Updating dokumen state smoothly for ID:', event.dokumen.id);
+
+                        setDokumen((prevDokumen) => {
+                            const updatedDokumen = prevDokumen.map((doc) => {
+                                if (doc.id === event.dokumen.id) {
+                                    console.log('✨ Found matching dokumen, updating:', {
+                                        oldStatus: doc.status,
+                                        newStatus: event.dokumen.status,
+                                    });
+
+                                    // Merge updated data with existing data
+                                    return {
+                                        ...doc,
+                                        ...event.dokumen,
+                                        // Preserve nested relations if not in event
+                                        user: event.dokumen.user || doc.user,
+                                        masterflow: event.dokumen.masterflow || doc.masterflow,
+                                        latest_version: event.dokumen.latest_version || doc.latest_version,
+                                        approvals: event.dokumen.approvals || doc.approvals,
+                                    };
+                                }
+                                return doc;
+                            });
+
+                            console.log('✅ Dokumen state updated smoothly');
+                            return updatedDokumen;
+                        });
+
+                        // Mark document as recently updated for animation
+                        setUpdatedDokumenIds((prev) => new Set(prev).add(event.dokumen.id));
+
+                        // Remove highlight after animation
+                        setTimeout(() => {
+                            setUpdatedDokumenIds((prev) => {
+                                const newSet = new Set(prev);
+                                newSet.delete(event.dokumen.id);
+                                return newSet;
+                            });
+                        }, 2000); // Remove after 2 seconds
+                    }
+
+                    // Tampilkan notifikasi toast
+                    console.log('🔔 Showing toast notification...');
+                    if (event.dokumen?.judul_dokumen) {
+                        const statusText = event.dokumen.status === 'approved' ? 'disetujui' : 'diupdate';
+                        showToast.success(`📡 Dokumen "${event.dokumen.judul_dokumen}" telah ${statusText}!`);
+                    } else {
+                        showToast.success('📡 Daftar dokumen telah diupdate secara real-time!');
+                    }
+                    console.log('✅ Toast notification triggered');
+                });
+
+                pusherChannel.bind('pusher:subscription_succeeded', () => {
+                    console.log('✅ Pusher subscription succeeded for:', userChannelName);
+                });
+
+                pusherChannel.bind('pusher:subscription_error', (error: any) => {
+                    console.error('❌ Pusher subscription error:', error);
+                });
+            }
+
+            // Subscribe to channel events FIRST before monitoring
+            console.log('🎯 Attaching listener for event: dokumen.updated');
+            channel.listen('dokumen.updated', (event: any) => {
+                console.log('🎉🎉🎉 CHANNEL LISTENER TRIGGERED! 🎉🎉🎉');
+                console.log('📡 Real-time dokumen update received:', event);
+                console.log('📡 Event data:', JSON.stringify(event, null, 2));
+
+                // Update dokumen in state smoothly (no full refresh)
+                if (event.dokumen?.id) {
+                    console.log('🔄 Updating dokumen state smoothly for ID:', event.dokumen.id);
+
+                    setDokumen((prevDokumen) => {
+                        const updatedDokumen = prevDokumen.map((doc) => {
+                            if (doc.id === event.dokumen.id) {
+                                console.log('✨ Found matching dokumen, updating:', {
+                                    oldStatus: doc.status,
+                                    newStatus: event.dokumen.status,
+                                });
+
+                                // Merge updated data with existing data
+                                return {
+                                    ...doc,
+                                    ...event.dokumen,
+                                    // Preserve nested relations if not in event
+                                    user: event.dokumen.user || doc.user,
+                                    masterflow: event.dokumen.masterflow || doc.masterflow,
+                                    latest_version: event.dokumen.latest_version || doc.latest_version,
+                                    approvals: event.dokumen.approvals || doc.approvals,
+                                };
+                            }
+                            return doc;
+                        });
+
+                        console.log('✅ Dokumen state updated smoothly');
+                        return updatedDokumen;
+                    });
+
+                    // Mark document as recently updated for animation
+                    setUpdatedDokumenIds((prev) => new Set(prev).add(event.dokumen.id));
+
+                    // Remove highlight after animation
+                    setTimeout(() => {
+                        setUpdatedDokumenIds((prev) => {
+                            const newSet = new Set(prev);
+                            newSet.delete(event.dokumen.id);
+                            return newSet;
+                        });
+                    }, 2000); // Remove after 2 seconds
+                }
+
+                // Tampilkan notifikasi toast
+                console.log('🔔 Showing toast notification...');
+                if (event.dokumen?.judul_dokumen) {
+                    const statusText = event.dokumen.status === 'approved' ? 'disetujui' : 'diupdate';
+                    showToast.success(`📡 Dokumen "${event.dokumen.judul_dokumen}" telah ${statusText}!`);
+                } else {
+                    showToast.success('📡 Daftar dokumen telah diupdate secara real-time!');
+                }
+                console.log('✅ Toast notification triggered');
+            });
+
+            // Monitor subscription success/error
+            channel.subscribed(() => {
+                console.log('✅ Successfully subscribed to channel:', userChannelName);
+                console.log('✅ Ready to receive real-time updates for user:', auth.user.id);
+            });
+
+            channel.error((error: any) => {
+                console.error('❌ Channel subscription error:', error);
+            });
+
+            // Monitor connection state
+            if (window.Echo.connector?.pusher) {
+                window.Echo.connector.pusher.connection.bind('connected', () => {
+                    console.log('✅ WebSocket connected successfully');
+                });
+
+                window.Echo.connector.pusher.connection.bind('error', (err: any) => {
+                    console.error('❌ WebSocket connection error:', err);
+                });
+
+                window.Echo.connector.pusher.connection.bind('disconnected', () => {
+                    console.warn('⚠️ WebSocket disconnected');
+                });
+
+                // Monitor all events for debugging (filter out internal Pusher events)
+                window.Echo.connector.pusher.bind_global((eventName: string, data: any) => {
+                    // Ignore internal Pusher protocol events (heartbeat/keepalive)
+                    if (eventName.startsWith('pusher:')) {
+                        return;
+                    }
+                    console.log('🔔 Global event received:', eventName, data);
+                    console.log('🔔 Event received on channel:', data?.channel || 'unknown');
+                    console.log('🔔 Looking for listener on channel:', userChannelName);
+                    console.log('🔔 Event name received:', eventName);
+                    console.log('🔔 Expected event name: dokumen.updated');
+                });
+            }
+
+            // Log subscription
+            console.log('📻 Subscribed to channel:', userChannelName);
+
+            // Cleanup saat component unmount
+            return () => {
+                console.log('🔌 Leaving channel:', userChannelName);
+                if (window.Echo.connector?.pusher) {
+                    window.Echo.connector.pusher.unsubscribe(userChannelName);
+                }
+                window.Echo.leave(userChannelName);
+            };
+        } else {
+            if (!window.Echo) {
+                console.error('❌ window.Echo not initialized! Check app.tsx');
+            }
+        }
     }, [auth.user]);
 
     // Handle form input changes
@@ -332,6 +559,78 @@ export default function UserDokumen() {
         }));
     };
 
+    // Toggle step mode between single and group
+    const toggleStepMode = (stepId: number) => {
+        setStepModes((prev) => {
+            const currentMode = prev[stepId] || 'single';
+            const newMode = currentMode === 'single' ? 'group' : 'single';
+
+            // Clear data for the previous mode
+            if (newMode === 'single') {
+                // Switching to single mode - clear group data
+                setFormData((prevForm) => {
+                    const newStepApprovers = { ...prevForm.step_approvers };
+                    delete newStepApprovers[stepId];
+                    return {
+                        ...prevForm,
+                        step_approvers: newStepApprovers,
+                    };
+                });
+            } else {
+                // Switching to group mode - clear single approver
+                setFormData((prevForm) => ({
+                    ...prevForm,
+                    approvers: {
+                        ...prevForm.approvers,
+                        [stepId]: '',
+                    },
+                }));
+            }
+
+            return {
+                ...prev,
+                [stepId]: newMode,
+            };
+        });
+    };
+
+    // Handle multiple approver selection for group mode
+    const handleMultipleApproverChange = (stepId: number, userId: number, checked: boolean) => {
+        setFormData((prev) => {
+            const currentStepApprovers = prev.step_approvers[stepId] || { userIds: [], jenisGroup: null };
+            const newUserIds = checked ? [...currentStepApprovers.userIds, userId] : currentStepApprovers.userIds.filter((id) => id !== userId);
+
+            return {
+                ...prev,
+                step_approvers: {
+                    ...prev.step_approvers,
+                    [stepId]: {
+                        ...currentStepApprovers,
+                        userIds: newUserIds,
+                    },
+                },
+            };
+        });
+    };
+
+    // Handle jenis group selection
+    const handleJenisGroupChange = (stepId: number, jenisGroup: 'all_required' | 'any_one' | 'majority') => {
+        setFormData((prev) => {
+            const currentStepApprovers = prev.step_approvers[stepId] || { userIds: [], jenisGroup: null };
+
+            return {
+                ...prev,
+                step_approvers: {
+                    ...prev.step_approvers,
+                    [stepId]: {
+                        ...currentStepApprovers,
+                        jenisGroup,
+                    },
+                },
+            };
+        });
+    };
+
     // Open create dialog
     const handleCreate = async () => {
         try {
@@ -353,6 +652,7 @@ export default function UserDokumen() {
         setFormData(newFormData);
         setSelectedMasterflow(null);
         setAvailableApprovers({});
+        setStepModes({}); // Reset step modes
         setErrors({});
         setIsCreateDialogOpen(true);
     };
@@ -396,43 +696,72 @@ export default function UserDokumen() {
                 });
             } else {
                 submitData.append('masterflow_id', formData.masterflow_id.toString());
-                // Send approvers mapping for existing masterflow
+
+                // Send step_approvers for group mode steps
+                Object.entries(formData.step_approvers).forEach(([stepId, stepApprover]) => {
+                    if (stepApprover.userIds.length > 0 && stepApprover.jenisGroup) {
+                        console.log(`Adding group approvers for step ${stepId}:`, stepApprover);
+                        submitData.append(`step_approvers[${stepId}][jenis_group]`, stepApprover.jenisGroup);
+                        stepApprover.userIds.forEach((userId, index) => {
+                            submitData.append(`step_approvers[${stepId}][user_ids][${index}]`, userId.toString());
+                        });
+                    }
+                });
+
+                // Send single approvers for single mode steps
                 Object.entries(formData.approvers).forEach(([stepId, userId]) => {
-                    if (userId !== '') {
+                    if (userId !== '' && !formData.step_approvers[Number(stepId)]) {
+                        console.log(`Adding single approver for step ${stepId}:`, userId);
                         submitData.append(`approvers[${stepId}]`, userId.toString());
                     }
                 });
             }
 
+            console.log('Submitting document with type:', type);
+            console.log('Form data summary:', {
+                masterflow_id: formData.masterflow_id,
+                step_approvers: formData.step_approvers,
+                approvers: formData.approvers,
+                stepModes: stepModes,
+            });
+
             // Use Inertia router for form submission with file
-            router.post('/dokumen', submitData, {
-                preserveState: true,
-                preserveScroll: true,
-                onSuccess: () => {
+            router.post('/api/dokumen', submitData, {
+                forceFormData: true,
+                preserveState: false,
+                preserveScroll: false,
+                onSuccess: (page) => {
                     const message =
                         type === 'draft'
                             ? `📝 Dokumen "${formData.judul_dokumen}" berhasil disimpan sebagai draft!`
                             : `🎉 Dokumen "${formData.judul_dokumen}" berhasil disubmit untuk approval!`;
                     showToast.success(message);
                     setIsCreateDialogOpen(false);
+                    setFormData(initialFormData);
+                    setStepModes({});
                     fetchDokumen();
                 },
                 onError: (errors) => {
                     console.error('Form submission errors:', errors);
                     setErrors(errors as unknown as Record<string, string[]>);
-                    showToast.error('❌ Failed to create document. Please check the form.');
+
+                    // Show specific error message if available
+                    const errorMessage = errors.error?.[0] || 'Failed to create document. Please check the form.';
+                    showToast.error(`❌ ${errorMessage}`);
+                },
+                onFinish: () => {
+                    setIsSubmitting(false);
                 },
             });
         } catch (error: any) {
             console.error('Form submission error:', error);
+            setIsSubmitting(false);
 
             if (error.response?.status === 419) {
                 showToast.error('❌ Session expired. Please refresh the page and try again.');
             } else {
                 showToast.error(`❌ Failed to save document. ${error.response?.data?.message || error.message}`);
             }
-        } finally {
-            setIsSubmitting(false);
         }
     };
 
@@ -621,7 +950,12 @@ export default function UserDokumen() {
                                                     <TableBody>
                                                         {filteredDokumen.length > 0 ? (
                                                             filteredDokumen.map((doc, index) => (
-                                                                <TableRow key={doc.id}>
+                                                                <TableRow
+                                                                    key={doc.id}
+                                                                    className={`transition-all duration-500 ${
+                                                                        updatedDokumenIds.has(doc.id) ? 'bg-green-50 dark:bg-green-950/20' : ''
+                                                                    }`}
+                                                                >
                                                                     <TableCell className="font-mono">{index + 1}</TableCell>
                                                                     <TableCell className="font-sans">
                                                                         <div className="flex flex-col gap-1">
@@ -641,7 +975,7 @@ export default function UserDokumen() {
                                                                     </TableCell>
                                                                     <TableCell className="text-right">
                                                                         <div className="flex justify-end gap-2">
-                                                                            <Link href={`/dokumen/${doc.id}`}>
+                                                                            <Link href={`/api/dokumen/${doc.id}`}>
                                                                                 <Button
                                                                                     variant="outline"
                                                                                     size="sm"
@@ -813,58 +1147,159 @@ export default function UserDokumen() {
                                                 {selectedMasterflow.steps
                                                     .sort((a, b) => a.step_order - b.step_order)
                                                     .map((step, index) => (
-                                                        <div key={step.id} className="grid grid-cols-[80px_1fr_1fr_40px] items-center gap-3">
-                                                            {/* Step Order */}
-                                                            <div className="flex items-center justify-center">
-                                                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-mono text-sm font-medium text-primary">
-                                                                    {index + 1}
+                                                        <div key={step.id} className="space-y-3">
+                                                            <div className="grid grid-cols-[80px_1fr_1fr_40px] items-center gap-3">
+                                                                {/* Step Order */}
+                                                                <div className="flex items-center justify-center">
+                                                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-mono text-sm font-medium text-primary">
+                                                                        {index + 1}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
 
-                                                            {/* Jabatan */}
-                                                            <div className="flex flex-col gap-1">
-                                                                <span className="text-xs text-muted-foreground">Jabatan</span>
-                                                                <div className="rounded-md border border-border bg-background px-3 py-2 font-sans text-sm">
-                                                                    {step.jabatan?.name || 'Sekertaris'}
+                                                                {/* Jabatan */}
+                                                                <div className="flex flex-col gap-1">
+                                                                    <span className="text-xs text-muted-foreground">Jabatan</span>
+                                                                    <div className="rounded-md border border-border bg-background px-3 py-2 font-sans text-sm">
+                                                                        {step.jabatan?.name || 'Sekertaris'}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
 
-                                                            {/* Nama Approval - Dropdown */}
-                                                            <div className="flex flex-col gap-1">
-                                                                <span className="text-xs text-muted-foreground">Nama Approval</span>
-                                                                <Select
-                                                                    value={
-                                                                        formData.approvers[step.id] === ''
-                                                                            ? ''
-                                                                            : formData.approvers[step.id]?.toString() || ''
-                                                                    }
-                                                                    onValueChange={(value) => handleApproverChange(step.id, value)}
-                                                                >
-                                                                    <SelectTrigger className="font-sans">
-                                                                        <SelectValue placeholder="Pilih approver" />
-                                                                    </SelectTrigger>
-                                                                    <SelectContent>
-                                                                        {(availableApprovers[step.id] || []).map((user) => (
-                                                                            <SelectItem
-                                                                                key={user.id}
-                                                                                value={user.id.toString()}
-                                                                                className="font-sans"
+                                                                {/* Nama Approval - Toggle between Single/Group Mode */}
+                                                                <div className="flex flex-col gap-1">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-xs text-muted-foreground">
+                                                                            {stepModes[step.id] === 'group' ? 'Group Approval' : 'Nama Approval'}
+                                                                        </span>
+                                                                        <Button
+                                                                            type="button"
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            onClick={() => toggleStepMode(step.id)}
+                                                                            className="h-6 px-2 text-xs"
+                                                                        >
+                                                                            {stepModes[step.id] === 'group' ? '👤 Single' : '👥 Group'}
+                                                                        </Button>
+                                                                    </div>
+
+                                                                    {stepModes[step.id] === 'group' ? (
+                                                                        <div className="space-y-2">
+                                                                            {/* Group Type Selection */}
+                                                                            <Select
+                                                                                value={formData.step_approvers[step.id]?.jenisGroup || ''}
+                                                                                onValueChange={(value) =>
+                                                                                    handleJenisGroupChange(
+                                                                                        step.id,
+                                                                                        value as 'all_required' | 'any_one' | 'majority',
+                                                                                    )
+                                                                                }
                                                                             >
-                                                                                {user.name}
-                                                                            </SelectItem>
-                                                                        ))}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            </div>
+                                                                                <SelectTrigger className="font-sans">
+                                                                                    <SelectValue placeholder="Pilih jenis group" />
+                                                                                </SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    <SelectItem value="all_required" className="font-sans">
+                                                                                        ✓ Semua Harus Approve
+                                                                                    </SelectItem>
+                                                                                    <SelectItem value="any_one" className="font-sans">
+                                                                                        1️⃣ Salah Satu Saja
+                                                                                    </SelectItem>
+                                                                                    <SelectItem value="majority" className="font-sans">
+                                                                                        📊 Mayoritas ({'>'} 50%)
+                                                                                    </SelectItem>
+                                                                                </SelectContent>
+                                                                            </Select>
 
-                                                            {/* Urutan Badge */}
-                                                            <div className="flex items-center justify-center">
-                                                                <Badge
-                                                                    variant="outline"
-                                                                    className="h-8 w-8 justify-center border-primary/30 font-mono text-xs"
-                                                                >
-                                                                    {index + 1}
-                                                                </Badge>
+                                                                            {/* Multiple Approvers Selection */}
+                                                                            <div className="rounded-md border border-border bg-background">
+                                                                                <div className="max-h-40 space-y-1 overflow-y-auto p-2">
+                                                                                    {(availableApprovers[step.id] || []).map((user) => (
+                                                                                        <label
+                                                                                            key={user.id}
+                                                                                            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-muted"
+                                                                                        >
+                                                                                            <input
+                                                                                                type="checkbox"
+                                                                                                checked={
+                                                                                                    formData.step_approvers[
+                                                                                                        step.id
+                                                                                                    ]?.userIds.includes(user.id) || false
+                                                                                                }
+                                                                                                onChange={(e) =>
+                                                                                                    handleMultipleApproverChange(
+                                                                                                        step.id,
+                                                                                                        user.id,
+                                                                                                        e.target.checked,
+                                                                                                    )
+                                                                                                }
+                                                                                                className="h-4 w-4 rounded border-gray-300"
+                                                                                            />
+                                                                                            <span className="text-sm">{user.name}</span>
+                                                                                        </label>
+                                                                                    ))}
+                                                                                    {(availableApprovers[step.id] || []).length === 0 && (
+                                                                                        <div className="px-2 py-3 text-center text-sm text-muted-foreground">
+                                                                                            Tidak ada approver tersedia
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Selected Count Badge */}
+                                                                            {formData.step_approvers[step.id]?.userIds.length > 0 && (
+                                                                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                                                    <Badge variant="secondary">
+                                                                                        {formData.step_approvers[step.id].userIds.length} approver
+                                                                                        dipilih
+                                                                                    </Badge>
+                                                                                    {formData.step_approvers[step.id]?.jenisGroup && (
+                                                                                        <Badge variant="outline" className="border-blue-400">
+                                                                                            {formData.step_approvers[step.id].jenisGroup ===
+                                                                                                'all_required' && 'Semua'}
+                                                                                            {formData.step_approvers[step.id].jenisGroup ===
+                                                                                                'any_one' && 'Salah Satu'}
+                                                                                            {formData.step_approvers[step.id].jenisGroup ===
+                                                                                                'majority' && 'Mayoritas'}
+                                                                                        </Badge>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <Select
+                                                                            value={
+                                                                                formData.approvers[step.id] === ''
+                                                                                    ? ''
+                                                                                    : formData.approvers[step.id]?.toString() || ''
+                                                                            }
+                                                                            onValueChange={(value) => handleApproverChange(step.id, value)}
+                                                                        >
+                                                                            <SelectTrigger className="font-sans">
+                                                                                <SelectValue placeholder="Pilih approver" />
+                                                                            </SelectTrigger>
+                                                                            <SelectContent>
+                                                                                {(availableApprovers[step.id] || []).map((user) => (
+                                                                                    <SelectItem
+                                                                                        key={user.id}
+                                                                                        value={user.id.toString()}
+                                                                                        className="font-sans"
+                                                                                    >
+                                                                                        {user.name}
+                                                                                    </SelectItem>
+                                                                                ))}
+                                                                            </SelectContent>
+                                                                        </Select>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Urutan Badge */}
+                                                                <div className="flex items-center justify-center">
+                                                                    <Badge
+                                                                        variant="outline"
+                                                                        className="h-8 w-8 justify-center border-primary/30 font-mono text-xs"
+                                                                    >
+                                                                        {index + 1}
+                                                                    </Badge>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     ))}

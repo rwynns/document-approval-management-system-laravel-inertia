@@ -6,6 +6,16 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
 
+// Public channel for dokumen updates (detail page)
+Broadcast::channel('dokumen.{id}', function ($user, $id) {
+    return true; // Public channel - anyone can listen
+});
+
+// Public channel for user-specific dokumen updates (list page)
+Broadcast::channel('user.{userId}.dokumen', function ($user, $userId) {
+    return true; // Public channel - anyone can listen
+});
+
 // Public channel for role management (everyone can listen)
 Broadcast::channel('role-management', function () {
     return true; // Public channel

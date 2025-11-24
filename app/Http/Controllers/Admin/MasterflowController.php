@@ -91,6 +91,10 @@ class MasterflowController extends Controller
             'steps.*.step_name' => 'required|string|max:255',
             'steps.*.description' => 'nullable|string',
             'steps.*.is_required' => 'boolean',
+            'steps.*.group_index' => 'nullable|string|max:255',
+            'steps.*.jenis_group' => 'nullable|in:all_required,any_one,majority',
+            'steps.*.users_in_group' => 'nullable|array',
+            'steps.*.users_in_group.*' => 'exists:users,id',
         ]);
 
         DB::transaction(function () use ($request, $companyId) {
@@ -112,6 +116,9 @@ class MasterflowController extends Controller
                     'step_name' => $stepData['step_name'],
                     'description' => $stepData['description'] ?? null,
                     'is_required' => $stepData['is_required'] ?? true,
+                    'group_index' => $stepData['group_index'] ?? null,
+                    'jenis_group' => $stepData['jenis_group'] ?? null,
+                    'users_in_group' => $stepData['users_in_group'] ?? null,
                 ]);
             }
         });
@@ -191,6 +198,10 @@ class MasterflowController extends Controller
             'steps.*.step_name' => 'required|string|max:255',
             'steps.*.description' => 'nullable|string',
             'steps.*.is_required' => 'boolean',
+            'steps.*.group_index' => 'nullable|string|max:255',
+            'steps.*.jenis_group' => 'nullable|in:all_required,any_one,majority',
+            'steps.*.users_in_group' => 'nullable|array',
+            'steps.*.users_in_group.*' => 'exists:users,id',
         ]);
 
         DB::transaction(function () use ($request, $masterflow) {
@@ -214,6 +225,9 @@ class MasterflowController extends Controller
                     'step_name' => $stepData['step_name'],
                     'description' => $stepData['description'] ?? null,
                     'is_required' => $stepData['is_required'] ?? true,
+                    'group_index' => $stepData['group_index'] ?? null,
+                    'jenis_group' => $stepData['jenis_group'] ?? null,
+                    'users_in_group' => $stepData['users_in_group'] ?? null,
                 ]);
             }
         });
