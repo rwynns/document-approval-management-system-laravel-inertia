@@ -7,6 +7,7 @@ use App\Http\Controllers\API\AplikasiController;
 use App\Http\Controllers\API\RoleController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserDashboardController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DokumenController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -46,6 +47,9 @@ Route::middleware(['auth:sanctum,web'])->group(function () {
 
     // User Management
     Route::apiResource('users', UserController::class);
+
+    // Dashboard Statistics
+    Route::get('/dashboard/super-admin/stats', [DashboardController::class, 'superAdminStats']);
 
     // User Dashboard API Routes
     Route::prefix('user')->group(function () {

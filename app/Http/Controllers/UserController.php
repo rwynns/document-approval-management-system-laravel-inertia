@@ -15,17 +15,87 @@ class UserController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $users = User::with([
+        $query = User::with([
             'profile',
             'userAuths.role',
             'userAuths.company',
             'userAuths.jabatan',
             'userAuths.aplikasi'
-        ])->orderBy('name')->get();
+        ]);
 
-        return response()->json($users);
+        // Filter by role
+        if ($request->has('role_id') && $request->role_id !== '') {
+            $query->whereHas('userAuths', function ($q) use ($request) {
+                $q->where('role_id', $request->role_id);
+            });
+        }
+
+        // Filter by jabatan
+        if ($request->has('jabatan_id') && $request->jabatan_id !== '') {
+            $query->whereHas('userAuths', function ($q) use ($request) {
+                $q->where('jabatan_id', $request->jabatan_id);
+            });
+        }
+
+        $users = $query->get();
+
+        // Define role hierarchy (lower number = higher priority)
+        $roleHierarchy = [
+            'Super Admin' => 1,
+            'Admin' => 2,
+            'User' => 3,
+        ];
+
+        // Sort users by highest role they have
+        $users = $users->sort(function ($a, $b) use ($roleHierarchy) {
+            // Get the highest role (lowest hierarchy number) for each user
+            $aHighestRole = 999;
+            if ($a->userAuths && $a->userAuths->count() > 0) {
+                foreach ($a->userAuths as $auth) {
+                    if ($auth->role && isset($roleHierarchy[$auth->role->role_name])) {
+                        $aHighestRole = min($aHighestRole, $roleHierarchy[$auth->role->role_name]);
+                    }
+                }
+            }
+
+            $bHighestRole = 999;
+            if ($b->userAuths && $b->userAuths->count() > 0) {
+                foreach ($b->userAuths as $auth) {
+                    if ($auth->role && isset($roleHierarchy[$auth->role->role_name])) {
+                        $bHighestRole = min($bHighestRole, $roleHierarchy[$auth->role->role_name]);
+                    }
+                }
+            }
+
+            // If same role level, sort by name
+            if ($aHighestRole === $bHighestRole) {
+                return strcmp($a->name, $b->name);
+            }
+
+            return $aHighestRole - $bHighestRole;
+        })->values();
+
+        // Pagination settings
+        $perPage = $request->get('per_page', 10);
+        $currentPage = $request->get('page', 1);
+        $total = $users->count();
+
+        // Manual pagination
+        $paginatedUsers = $users->slice(($currentPage - 1) * $perPage, $perPage)->values();
+
+        return response()->json([
+            'data' => $paginatedUsers,
+            'meta' => [
+                'current_page' => (int) $currentPage,
+                'per_page' => (int) $perPage,
+                'total' => $total,
+                'last_page' => (int) ceil($total / $perPage),
+                'from' => ($currentPage - 1) * $perPage + 1,
+                'to' => min($currentPage * $perPage, $total),
+            ]
+        ]);
     }
 
     /**

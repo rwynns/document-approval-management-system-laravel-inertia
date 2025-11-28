@@ -14,7 +14,22 @@ import api from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Head, usePage } from '@inertiajs/react';
 import { IconPlus, IconUser } from '@tabler/icons-react';
-import { Activity, Edit, Eye, EyeOff, Minus, Plus, Trash2 } from 'lucide-react';
+import {
+    Activity,
+    Briefcase,
+    Building2,
+    ChevronLeft,
+    ChevronRight,
+    ChevronsLeft,
+    ChevronsRight,
+    Edit,
+    Eye,
+    EyeOff,
+    Minus,
+    Plus,
+    Smartphone,
+    Trash2,
+} from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 interface UserProfile {
@@ -66,6 +81,15 @@ interface User {
     updated_at: string;
 }
 
+interface PaginationMeta {
+    current_page: number;
+    per_page: number;
+    total: number;
+    last_page: number;
+    from: number;
+    to: number;
+}
+
 interface FormData {
     name: string;
     email: string;
@@ -115,15 +139,39 @@ export default function UserManagement() {
     const [showPassword, setShowPassword] = useState(false);
     const [showPin, setShowPin] = useState(false);
     const [errors, setErrors] = useState<Record<string, string[]>>({});
+    const [filterRole, setFilterRole] = useState<string>('');
+    const [filterJabatan, setFilterJabatan] = useState<string>('');
+    const [pagination, setPagination] = useState<PaginationMeta>({
+        current_page: 1,
+        per_page: 10,
+        total: 0,
+        last_page: 1,
+        from: 0,
+        to: 0,
+    });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [perPage, setPerPage] = useState(10);
 
     // Fetch users from API
     const fetchUsers = async () => {
         try {
             console.log('Fetching users...');
             setIsLoading(true);
-            const response = await api.get('/users');
+
+            // Build query parameters
+            const params = new URLSearchParams();
+            if (filterRole) params.append('role_id', filterRole);
+            if (filterJabatan) params.append('jabatan_id', filterJabatan);
+            params.append('page', currentPage.toString());
+            params.append('per_page', perPage.toString());
+
+            const queryString = params.toString();
+            const url = queryString ? `/users?${queryString}` : '/users';
+
+            const response = await api.get(url);
             console.log('Users fetched:', response.data);
-            setUsers(response.data);
+            setUsers(response.data.data);
+            setPagination(response.data.meta);
         } catch (error) {
             console.error('Error fetching users:', error);
             showToast.error('❌ Failed to load users. Please try again.');
@@ -175,9 +223,20 @@ export default function UserManagement() {
             return;
         }
         console.log('Authenticated user found, loading data');
-        fetchUsers();
         fetchMasterData();
     }, [auth.user]);
+
+    // Refetch users when filters change
+    useEffect(() => {
+        if (auth.user) {
+            fetchUsers();
+        }
+    }, [auth.user, filterRole, filterJabatan, currentPage, perPage]);
+
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterRole, filterJabatan, perPage]);
 
     // Handle form input changes
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -369,11 +428,63 @@ export default function UserManagement() {
                                     </h1>
                                     <p className="font-sans text-base text-muted-foreground">Kelola dan atur master user dalam sistem</p>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <Badge variant="outline" className="border-primary/30 bg-primary/10 font-sans text-sm font-medium text-primary">
-                                        <Activity className="mr-1 h-3 w-3" />
-                                        {users.length} Users
-                                    </Badge>
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <Badge
+                                            variant="outline"
+                                            className="border-primary/30 bg-primary/10 font-sans text-sm font-medium text-primary"
+                                        >
+                                            <Activity className="mr-1 h-3 w-3" />
+                                            {pagination.total} Users
+                                        </Badge>
+
+                                        {/* Role Filter */}
+                                        <div className="flex items-center gap-2">
+                                            <Label htmlFor="filter-role" className="font-sans text-sm font-medium">
+                                                Role:
+                                            </Label>
+                                            <Select
+                                                value={filterRole || 'all'}
+                                                onValueChange={(value) => setFilterRole(value === 'all' ? '' : value)}
+                                            >
+                                                <SelectTrigger id="filter-role" className="w-40 font-sans">
+                                                    <SelectValue placeholder="Semua Role" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">Semua Role</SelectItem>
+                                                    {roles.map((role) => (
+                                                        <SelectItem key={role.id} value={role.id.toString()}>
+                                                            {role.role_name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        {/* Jabatan Filter */}
+                                        <div className="flex items-center gap-2">
+                                            <Label htmlFor="filter-jabatan" className="font-sans text-sm font-medium">
+                                                Jabatan:
+                                            </Label>
+                                            <Select
+                                                value={filterJabatan || 'all'}
+                                                onValueChange={(value) => setFilterJabatan(value === 'all' ? '' : value)}
+                                            >
+                                                <SelectTrigger id="filter-jabatan" className="w-40 font-sans">
+                                                    <SelectValue placeholder="Semua Jabatan" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">Semua Jabatan</SelectItem>
+                                                    {jabatans.map((jabatan) => (
+                                                        <SelectItem key={jabatan.id} value={jabatan.id.toString()}>
+                                                            {jabatan.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
                                     <Button onClick={handleCreate} className="gap-2 font-sans font-medium">
                                         <IconPlus className="h-4 w-4" />
                                         Tambah User
@@ -413,68 +524,56 @@ export default function UserManagement() {
                                                                 <TableCell className="font-sans">{user.email}</TableCell>
                                                                 <TableCell className="font-sans">{user.profile?.phone_number || '-'}</TableCell>
                                                                 <TableCell className="font-sans">
-                                                                    <div className="space-y-3">
+                                                                    <div className="space-y-4">
                                                                         {user.user_auths && user.user_auths.length > 0 ? (
                                                                             user.user_auths.map((auth, authIndex) => (
-                                                                                <div
-                                                                                    key={authIndex}
-                                                                                    className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
-                                                                                >
-                                                                                    <div className="mb-2 flex items-center gap-2">
-                                                                                        <span className="text-xs font-medium text-gray-500">
-                                                                                            Authorization #{authIndex + 1}
+                                                                                <div key={authIndex} className="space-y-1.5">
+                                                                                    {/* Badge Role - Highlight Utama */}
+                                                                                    <div>
+                                                                                        <span
+                                                                                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                                                                                auth.role?.role_name === 'Super Admin'
+                                                                                                    ? 'bg-red-100 text-red-800'
+                                                                                                    : auth.role?.role_name === 'Admin'
+                                                                                                      ? 'bg-blue-100 text-blue-800'
+                                                                                                      : auth.role?.role_name === 'User'
+                                                                                                        ? 'bg-green-100 text-green-800'
+                                                                                                        : 'bg-gray-100 text-gray-800'
+                                                                                            }`}
+                                                                                        >
+                                                                                            {auth.role?.role_name || 'No Role'}
                                                                                         </span>
                                                                                     </div>
-                                                                                    <div className="space-y-2">
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <span className="text-xs font-medium text-gray-600">
-                                                                                                Role:
-                                                                                            </span>
-                                                                                            <span
-                                                                                                className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                                                                                                    auth.role?.role_name === 'Super Admin'
-                                                                                                        ? 'bg-red-100 text-red-800'
-                                                                                                        : auth.role?.role_name === 'Admin'
-                                                                                                          ? 'bg-blue-100 text-blue-800'
-                                                                                                          : auth.role?.role_name === 'User'
-                                                                                                            ? 'bg-green-100 text-green-800'
-                                                                                                            : 'bg-gray-100 text-gray-800'
-                                                                                                }`}
-                                                                                            >
-                                                                                                {auth.role?.role_name || 'No Role'}
-                                                                                            </span>
+
+                                                                                    {/* Company Name - Konteks Organisasi */}
+                                                                                    <div className="flex items-center gap-1.5 text-sm text-gray-700">
+                                                                                        <Building2 className="h-3.5 w-3.5 text-gray-500" />
+                                                                                        <span className="font-medium">
+                                                                                            {auth.company?.name || 'No Company'}
+                                                                                        </span>
+                                                                                    </div>
+
+                                                                                    {/* Jabatan & Aplikasi - Detail Sekunder */}
+                                                                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                                                        <div className="flex items-center gap-1">
+                                                                                            <Briefcase className="h-3 w-3" />
+                                                                                            <span>{auth.jabatan?.name || 'No Jabatan'}</span>
                                                                                         </div>
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <span className="text-xs font-medium text-gray-600">
-                                                                                                Company:
-                                                                                            </span>
-                                                                                            <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-800">
-                                                                                                {auth.company?.name || 'No Company'}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <span className="text-xs font-medium text-gray-600">
-                                                                                                Jabatan:
-                                                                                            </span>
-                                                                                            <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-1 text-xs font-medium text-orange-800">
-                                                                                                {auth.jabatan?.name || 'No Jabatan'}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <span className="text-xs font-medium text-gray-600">
-                                                                                                Aplikasi:
-                                                                                            </span>
-                                                                                            <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-1 text-xs font-medium text-indigo-800">
-                                                                                                {auth.aplikasi?.name || 'No Aplikasi'}
-                                                                                            </span>
+                                                                                        <span className="text-gray-400">•</span>
+                                                                                        <div className="flex items-center gap-1">
+                                                                                            <Smartphone className="h-3 w-3" />
+                                                                                            <span>{auth.aplikasi?.name || 'No Aplikasi'}</span>
                                                                                         </div>
                                                                                     </div>
+
+                                                                                    {/* Divider between multiple auths */}
+                                                                                    {authIndex < user.user_auths!.length - 1 && (
+                                                                                        <div className="mt-3 border-t border-gray-200 pt-3"></div>
+                                                                                    )}
                                                                                 </div>
                                                                             ))
                                                                         ) : (
-                                                                            <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 py-4">
-                                                                                <span className="text-sm text-gray-500">Tidak ada authorization</span>
-                                                                            </div>
+                                                                            <div className="py-2 text-sm text-gray-500">Tidak ada authorization</div>
                                                                         )}
                                                                     </div>
                                                                 </TableCell>
@@ -511,6 +610,112 @@ export default function UserManagement() {
                                             </Table>
                                         </CardContent>
                                     </Card>
+                                )}
+
+                                {/* Pagination */}
+                                {!isLoading && users.length > 0 && (
+                                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                        {/* Results Info */}
+                                        <div className="text-sm text-muted-foreground">
+                                            Menampilkan <span className="font-medium text-foreground">{pagination.from}</span> hingga{' '}
+                                            <span className="font-medium text-foreground">{pagination.to}</span> dari{' '}
+                                            <span className="font-medium text-foreground">{pagination.total}</span> user
+                                        </div>
+
+                                        <div className="flex items-center gap-6">
+                                            {/* Per Page Selector */}
+                                            <div className="flex items-center gap-2">
+                                                <Label htmlFor="per-page" className="text-sm font-medium">
+                                                    Per halaman:
+                                                </Label>
+                                                <Select value={perPage.toString()} onValueChange={(value) => setPerPage(Number(value))}>
+                                                    <SelectTrigger id="per-page" className="w-20 font-sans">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="5">5</SelectItem>
+                                                        <SelectItem value="10">10</SelectItem>
+                                                        <SelectItem value="20">20</SelectItem>
+                                                        <SelectItem value="50">50</SelectItem>
+                                                        <SelectItem value="100">100</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+
+                                            {/* Pagination Buttons */}
+                                            <div className="flex items-center gap-1">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setCurrentPage(1)}
+                                                    disabled={currentPage === 1}
+                                                    className="h-8 w-8 p-0"
+                                                >
+                                                    <ChevronsLeft className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                                    disabled={currentPage === 1}
+                                                    className="h-8 w-8 p-0"
+                                                >
+                                                    <ChevronLeft className="h-4 w-4" />
+                                                </Button>
+
+                                                {/* Page Numbers */}
+                                                <div className="flex items-center gap-1">
+                                                    {Array.from({ length: Math.min(5, pagination.last_page) }, (_, i) => {
+                                                        let pageNum;
+                                                        if (pagination.last_page <= 5) {
+                                                            pageNum = i + 1;
+                                                        } else if (currentPage <= 3) {
+                                                            pageNum = i + 1;
+                                                        } else if (currentPage >= pagination.last_page - 2) {
+                                                            pageNum = pagination.last_page - 4 + i;
+                                                        } else {
+                                                            pageNum = currentPage - 2 + i;
+                                                        }
+
+                                                        return (
+                                                            <Button
+                                                                key={pageNum}
+                                                                variant={currentPage === pageNum ? 'default' : 'outline'}
+                                                                size="sm"
+                                                                onClick={() => setCurrentPage(pageNum)}
+                                                                className={`h-8 w-8 p-0 ${
+                                                                    currentPage === pageNum
+                                                                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                                                                        : ''
+                                                                }`}
+                                                            >
+                                                                {pageNum}
+                                                            </Button>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setCurrentPage((prev) => Math.min(pagination.last_page, prev + 1))}
+                                                    disabled={currentPage === pagination.last_page}
+                                                    className="h-8 w-8 p-0"
+                                                >
+                                                    <ChevronRight className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setCurrentPage(pagination.last_page)}
+                                                    disabled={currentPage === pagination.last_page}
+                                                    className="h-8 w-8 p-0"
+                                                >
+                                                    <ChevronsRight className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         </div>
