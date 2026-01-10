@@ -14,25 +14,15 @@ class DokumenUpdated implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $dokumen;
+    public Dokumen $dokumen;
 
     /**
      * Create a new event instance.
      */
     public function __construct(Dokumen $dokumen)
     {
-        $this->dokumen = $dokumen->load([
-            'user',
-            'company',
-            'aplikasi',
-            'masterflow.steps.jabatan',
-            'versions' => function ($query) {
-                $query->orderBy('created_at', 'desc');
-            },
-            'approvals' => function ($query) {
-                $query->with(['user', 'masterflowStep.jabatan']);
-            },
-        ]);
+        // Only load essential relations for minimal payload
+        $this->dokumen = $dokumen;
     }
 
     /**
@@ -53,6 +43,7 @@ class DokumenUpdated implements ShouldBroadcastNow
 
     /**
      * Get the data to broadcast.
+     * Only send essential data to avoid "Payload too large" error.
      */
     public function broadcastWith(): array
     {
@@ -62,8 +53,16 @@ class DokumenUpdated implements ShouldBroadcastNow
             'status' => $this->dokumen->status
         ]);
 
+        // Send minimal payload - frontend should reload for full data
         return [
-            'dokumen' => $this->dokumen,
+            'dokumen' => [
+                'id' => $this->dokumen->id,
+                'judul_dokumen' => $this->dokumen->judul_dokumen,
+                'nomor_dokumen' => $this->dokumen->nomor_dokumen,
+                'status' => $this->dokumen->status,
+                'status_current' => $this->dokumen->status_current,
+                'updated_at' => $this->dokumen->updated_at?->toISOString(),
+            ],
             'timestamp' => now()->toISOString(),
         ];
     }

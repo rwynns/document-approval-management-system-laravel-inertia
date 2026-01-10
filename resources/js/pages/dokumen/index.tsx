@@ -69,6 +69,28 @@ interface DokumenApproval {
     user?: User;
 }
 
+interface NextApprover {
+    id: number;
+    user?: User;
+    approver_email?: string;
+    step_name?: string;
+    jabatan_name?: string;
+    approval_order?: number;
+    group_index?: string | null;
+    jenis_group?: string | null;
+    tgl_deadline?: string;
+}
+
+interface DetailedStatus {
+    status: string;
+    status_current: string;
+    is_fully_approved: boolean;
+    is_rejected: boolean;
+    next_approvers: NextApprover[];
+    current_step_description: string | null;
+    approval_progress: number;
+}
+
 interface Dokumen {
     id: number;
     judul_dokumen: string;
@@ -82,6 +104,7 @@ interface Dokumen {
     masterflow?: Masterflow;
     latest_version?: DokumenVersion;
     approvals?: DokumenApproval[];
+    detailed_status?: DetailedStatus;
     created_at: string;
     updated_at: string;
 }
@@ -235,6 +258,8 @@ export default function UserDokumen() {
                                     console.log('✨ Found matching dokumen, updating:', {
                                         oldStatus: doc.status,
                                         newStatus: event.dokumen.status,
+                                        oldCurrentStep: doc.detailed_status?.current_step_description,
+                                        newCurrentStep: event.dokumen.detailed_status?.current_step_description,
                                     });
 
                                     // Merge updated data with existing data
@@ -246,6 +271,7 @@ export default function UserDokumen() {
                                         masterflow: event.dokumen.masterflow || doc.masterflow,
                                         latest_version: event.dokumen.latest_version || doc.latest_version,
                                         approvals: event.dokumen.approvals || doc.approvals,
+                                        detailed_status: event.dokumen.detailed_status || doc.detailed_status,
                                     };
                                 }
                                 return doc;
@@ -305,6 +331,8 @@ export default function UserDokumen() {
                                 console.log('✨ Found matching dokumen, updating:', {
                                     oldStatus: doc.status,
                                     newStatus: event.dokumen.status,
+                                    oldCurrentStep: doc.detailed_status?.current_step_description,
+                                    newCurrentStep: event.dokumen.detailed_status?.current_step_description,
                                 });
 
                                 // Merge updated data with existing data
@@ -316,6 +344,7 @@ export default function UserDokumen() {
                                     masterflow: event.dokumen.masterflow || doc.masterflow,
                                     latest_version: event.dokumen.latest_version || doc.latest_version,
                                     approvals: event.dokumen.approvals || doc.approvals,
+                                    detailed_status: event.dokumen.detailed_status || doc.detailed_status,
                                 };
                             }
                             return doc;
@@ -943,6 +972,7 @@ export default function UserDokumen() {
                                                             <TableHead className="min-w-64 font-sans">Judul Dokumen</TableHead>
                                                             <TableHead className="w-48 font-sans">Masterflow</TableHead>
                                                             <TableHead className="w-40 font-sans">Status</TableHead>
+                                                            <TableHead className="min-w-64 font-sans">Current Step</TableHead>
                                                             <TableHead className="w-40 font-sans">Tanggal Pengajuan</TableHead>
                                                             <TableHead className="w-32 text-right font-sans">Aksi</TableHead>
                                                         </TableRow>
@@ -970,6 +1000,23 @@ export default function UserDokumen() {
                                                                     </TableCell>
                                                                     <TableCell className="font-sans">{doc.masterflow?.name || '-'}</TableCell>
                                                                     <TableCell className="font-sans">{getStatusBadge(doc.status)}</TableCell>
+                                                                    <TableCell className="font-sans">
+                                                                        {doc.detailed_status?.current_step_description ? (
+                                                                            <div className="flex flex-col gap-1">
+                                                                                <span className="text-xs text-muted-foreground">
+                                                                                    {doc.detailed_status.current_step_description}
+                                                                                </span>
+                                                                            </div>
+                                                                        ) : doc.detailed_status?.is_fully_approved ? (
+                                                                            <span className="text-xs font-medium text-green-600">
+                                                                                ✓ Semua sudah approve
+                                                                            </span>
+                                                                        ) : doc.detailed_status?.is_rejected ? (
+                                                                            <span className="text-xs font-medium text-red-600">✗ Ditolak</span>
+                                                                        ) : (
+                                                                            <span className="text-xs text-gray-400">-</span>
+                                                                        )}
+                                                                    </TableCell>
                                                                     <TableCell className="font-sans">
                                                                         {new Date(doc.tgl_pengajuan).toLocaleDateString('id-ID')}
                                                                     </TableCell>
@@ -1011,7 +1058,7 @@ export default function UserDokumen() {
                                                             ))
                                                         ) : (
                                                             <TableRow>
-                                                                <TableCell colSpan={6} className="py-8 text-center font-sans text-gray-500">
+                                                                <TableCell colSpan={7} className="py-8 text-center font-sans text-gray-500">
                                                                     {searchQuery || statusFilter !== 'all'
                                                                         ? 'Tidak ada dokumen yang sesuai dengan filter'
                                                                         : 'Belum ada dokumen. Klik "Buat Dokumen" untuk memulai.'}

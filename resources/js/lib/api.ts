@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 // Get CSRF token from meta tag or cookie
 function getCsrfToken(): string | null {
@@ -28,11 +28,9 @@ function getSessionToken(): string | null {
 
 // Initialize CSRF protection
 let csrfInitialized = false;
-async function initializeCSRF() {
-    if (csrfInitialized) return;
-    
+async function initializeCSRF(): Promise<void> {
     try {
-        // Get CSRF cookie from Laravel
+        // Get CSRF cookie from Laravel (always refresh to ensure valid token)
         await axios.get('/sanctum/csrf-cookie', {
             withCredentials: true
         });
@@ -40,6 +38,12 @@ async function initializeCSRF() {
     } catch (error) {
         console.warn('Failed to initialize CSRF protection:', error);
     }
+}
+
+// Force refresh CSRF token (used after 419 error)
+async function refreshCSRF(): Promise<void> {
+    csrfInitialized = false;
+    await initializeCSRF();
 }
 
 // Create axios instance
@@ -53,35 +57,30 @@ const api = axios.create({
 });
 
 // Add CSRF token and auth token to requests
-api.interceptors.request.use(async (config) => {
-    // Ensure CSRF cookie is set first
-    await initializeCSRF();
+api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+    // Ensure CSRF cookie is set first (on first request)
+    if (!csrfInitialized) {
+        await initializeCSRF();
+    }
     
     // Get CSRF token from XSRF-TOKEN cookie (preferred by Laravel Sanctum)
     const xsrfMatches = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
     if (xsrfMatches) {
         const xsrfToken = decodeURIComponent(xsrfMatches[1]);
         config.headers['X-XSRF-TOKEN'] = xsrfToken;
-        console.log('Using X-XSRF-TOKEN from cookie');
     } else {
         // Fallback to X-CSRF-TOKEN from meta tag
         const csrfToken = getCsrfToken();
         if (csrfToken) {
             config.headers['X-CSRF-TOKEN'] = csrfToken;
-            console.log('Using X-CSRF-TOKEN from meta tag');
-        } else {
-            console.warn('No CSRF token found!');
         }
     }
-    
-    console.log('Session token found:', getSessionToken() ? 'Yes' : 'No');
     
     // Add Socket ID for broadcasting exclusion (toOthers)
     if (typeof window !== 'undefined' && window.Echo) {
         const socketId = window.Echo.socketId();
         if (socketId) {
             config.headers['X-Socket-ID'] = socketId;
-            console.log('Using X-Socket-ID:', socketId);
         }
     }
     
@@ -91,19 +90,44 @@ api.interceptors.request.use(async (config) => {
         config.headers.Authorization = `Bearer ${token}`;
     }
     
-    console.log('API Request headers:', config.headers);
     return config;
 });
 
-// Handle authentication errors
+// Handle authentication errors with retry for 419
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
-        if (error.response?.status === 401 || error.response?.status === 419) {
-            // 401 = Unauthorized, 419 = CSRF token mismatch
+    async (error: AxiosError) => {
+        const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+        
+        // Handle 419 CSRF token mismatch - try refreshing token once
+        if (error.response?.status === 419 && !originalRequest._retry) {
+            originalRequest._retry = true;
+            
+            try {
+                // Refresh CSRF token
+                await refreshCSRF();
+                
+                // Update the request with new token
+                const xsrfMatches = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+                if (xsrfMatches) {
+                    originalRequest.headers['X-XSRF-TOKEN'] = decodeURIComponent(xsrfMatches[1]);
+                }
+                
+                // Retry the original request
+                return api(originalRequest);
+            } catch (retryError) {
+                // If retry fails, redirect to login
+                window.location.href = '/login';
+                return Promise.reject(retryError);
+            }
+        }
+        
+        // Handle 401 Unauthorized
+        if (error.response?.status === 401) {
             localStorage.removeItem('auth-token');
             window.location.href = '/login';
         }
+        
         return Promise.reject(error);
     }
 );

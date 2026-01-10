@@ -26,6 +26,8 @@ class User extends Authenticatable
         'google_id',
         'google_token',
         'google_refresh_token',
+        'email_preferences',
+        'last_context_id',
     ];
 
     /**
@@ -51,6 +53,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'email_preferences' => 'array',
         ];
     }
 
@@ -122,5 +125,13 @@ class User extends Authenticatable
     public function defaultSignature()
     {
         return $this->hasOne(Signature::class)->where('is_default', true);
+    }
+
+    /**
+     * Get the user's last used context.
+     */
+    public function lastContext()
+    {
+        return $this->belongsTo(UsersAuth::class, 'last_context_id');
     }
 }

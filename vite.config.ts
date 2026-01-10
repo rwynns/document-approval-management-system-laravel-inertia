@@ -22,4 +22,12 @@ export default defineConfig({
             'ziggy-js': resolve(__dirname, 'vendor/tightenco/ziggy'),
         },
     },
+    server: {
+        proxy: {
+            '/storage': {
+                target: 'http://127.0.0.1:8000',
+                changeOrigin: true,
+            },
+        },
+    },
 });

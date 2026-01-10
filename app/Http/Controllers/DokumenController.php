@@ -7,17 +7,30 @@ use App\Models\DokumenVersion;
 use App\Models\DokumenApproval;
 use App\Models\Masterflow;
 use App\Models\Comment;
+use App\Models\RevisionLog;
 use App\Events\ApprovalCreated;
+use App\Jobs\SendApprovalNotification;
+use App\Mail\ApprovalRequestMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use App\Services\ContextService;
+use App\Services\PdfSignatureService;
 
 class DokumenController extends Controller
 {
+    protected ContextService $contextService;
+
+    public function __construct(ContextService $contextService)
+    {
+        $this->contextService = $contextService;
+    }
+
     /**
      * API: Get list of documents (returns JSON).
      */
@@ -25,6 +38,19 @@ class DokumenController extends Controller
     {
         $query = Dokumen::with(['user', 'masterflow', 'latestVersion', 'approvals.user'])
             ->orderBy('created_at', 'desc');
+
+        // Context-based filtering (Super Admin sees all)
+        if (!$this->contextService->isSuperAdmin()) {
+            $companyId = $this->contextService->getCurrentCompanyId();
+            $aplikasiId = $this->contextService->getCurrentAplikasiId();
+
+            if ($companyId) {
+                $query->where('company_id', $companyId);
+            }
+            if ($aplikasiId) {
+                $query->where('aplikasi_id', $aplikasiId);
+            }
+        }
 
         // Filter by status
         if ($request->filled('status')) {
@@ -50,6 +76,11 @@ class DokumenController extends Controller
         }
 
         $dokumen = $query->get();
+
+        // Add detailed status to each dokumen
+        $dokumen->each(function ($doc) {
+            $doc->detailed_status = $doc->getDetailedStatus();
+        });
 
         return response()->json([
             'data' => $dokumen,
@@ -65,6 +96,19 @@ class DokumenController extends Controller
         $query = Dokumen::with(['user', 'masterflow', 'latestVersion', 'approvals.user'])
             ->orderBy('created_at', 'desc');
 
+        // Context-based filtering (Super Admin sees all)
+        if (!$this->contextService->isSuperAdmin()) {
+            $companyId = $this->contextService->getCurrentCompanyId();
+            $aplikasiId = $this->contextService->getCurrentAplikasiId();
+
+            if ($companyId) {
+                $query->where('company_id', $companyId);
+            }
+            if ($aplikasiId) {
+                $query->where('aplikasi_id', $aplikasiId);
+            }
+        }
+
         // Filter by status
         if ($request->filled('status')) {
             $query->byStatus($request->status);
@@ -90,6 +134,11 @@ class DokumenController extends Controller
 
         $dokumen = $query->get();
 
+        // Add detailed status to each dokumen
+        $dokumen->each(function ($doc) {
+            $doc->detailed_status = $doc->getDetailedStatus();
+        });
+
         return response()->json([
             'data' => $dokumen,
         ]);
@@ -100,7 +149,17 @@ class DokumenController extends Controller
      */
     public function create()
     {
-        $masterflows = Masterflow::where('is_active', true)->get();
+        // Filter masterflows by current company context
+        $query = Masterflow::where('is_active', true);
+
+        if (!$this->contextService->isSuperAdmin()) {
+            $companyId = $this->contextService->getCurrentCompanyId();
+            if ($companyId) {
+                $query->where('company_id', $companyId);
+            }
+        }
+
+        $masterflows = $query->get();
 
         return Inertia::render('Dokumen/Create', [
             'masterflows' => $masterflows,
@@ -112,10 +171,10 @@ class DokumenController extends Controller
      */
     public function store(Request $request)
     {
-        // Get user's company and aplikasi from first user_auth
-        $userAuth = Auth::user()->userAuths->first();
-        if (!$userAuth) {
-            return back()->withErrors(['error' => 'User tidak memiliki akses ke company atau aplikasi.']);
+        // Get user's company and aplikasi from CURRENT CONTEXT (not first)
+        $context = $this->contextService->getContext();
+        if (!$context) {
+            return back()->withErrors(['error' => 'User tidak memiliki akses ke company atau aplikasi. Silakan pilih context terlebih dahulu.']);
         }
 
         // Determine validation rules based on masterflow_id
@@ -159,8 +218,8 @@ class DokumenController extends Controller
                 'nomor_dokumen' => $validated['nomor_dokumen'],
                 'judul_dokumen' => $validated['judul_dokumen'],
                 'user_id' => Auth::id(),
-                'company_id' => $userAuth->company_id,
-                'aplikasi_id' => $userAuth->aplikasi_id,
+                'company_id' => $context->company_id,
+                'aplikasi_id' => $context->aplikasi_id,
                 'masterflow_id' => $request->masterflow_id === 'custom' ? null : $validated['masterflow_id'],
                 'status' => $status,
                 'tgl_pengajuan' => $validated['tgl_pengajuan'],
@@ -255,6 +314,9 @@ class DokumenController extends Controller
                                     'dokumen_id' => $dokumen->id,
                                 ]);
                                 broadcast(new ApprovalCreated($approval))->toOthers();
+
+                                // Dispatch email notification job
+                                SendApprovalNotification::dispatch($approval);
                             }
                         } else {
                             // Single approver selected by user
@@ -280,6 +342,9 @@ class DokumenController extends Controller
                                     'dokumen_id' => $dokumen->id,
                                 ]);
                                 broadcast(new ApprovalCreated($approval))->toOthers();
+
+                                // Dispatch email notification job
+                                SendApprovalNotification::dispatch($approval);
                             }
                         }
                     }
@@ -337,6 +402,9 @@ class DokumenController extends Controller
         Log::info('Loaded dokumen data', [
             'dokumen' => $dokumen->toArray()
         ]);
+
+        // Add detailed status
+        $dokumen->detailed_status = $dokumen->getDetailedStatus();
 
         // If API request (AJAX/Fetch), return JSON
         if ($request->expectsJson() || $request->wantsJson()) {
@@ -561,6 +629,279 @@ class DokumenController extends Controller
     }
 
     /**
+     * Upload revision for rejected document.
+     */
+    public function uploadRevision(Request $request, Dokumen $dokumen, PdfSignatureService $pdfSignatureService)
+    {
+        Log::info('Upload revision requested', [
+            'dokumen_id' => $dokumen->id,
+            'user_id' => Auth::id(),
+            'is_json' => $request->expectsJson() || $request->wantsJson(),
+            'files' => $request->allFiles(),
+        ]);
+
+        // Allow revision upload for rejected OR needs_revision status
+        if (!in_array($dokumen->status, ['rejected', 'needs_revision'])) {
+            $message = 'Dokumen ini tidak memerlukan revisi.';
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json(['message' => $message], 422);
+            }
+            return back()->withErrors(['error' => $message]);
+        }
+
+        // Only document owner can upload revision
+        if ($dokumen->user_id !== Auth::id()) {
+            $message = 'Anda tidak memiliki akses untuk merevisi dokumen ini.';
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json(['message' => $message], 403);
+            }
+            return back()->withErrors(['error' => $message]);
+        }
+
+        $validated = $request->validate([
+            'file' => 'required|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx|max:10240',
+            'comment' => 'nullable|string|max:1000',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // Get the latest version to increment version number
+            $latestVersion = $dokumen->latestVersion;
+            $currentVersion = $latestVersion ? floatval($latestVersion->version) : 0.0;
+            $newVersion = number_format($currentVersion + 1.0, 1);
+
+            // Upload new file
+            $file = $request->file('file');
+            $filename = time() . '_' . \Illuminate\Support\Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)) . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('documents', $filename, 'public');
+
+            // Create new version
+            $dokumenVersion = DokumenVersion::create([
+                'dokumen_id' => $dokumen->id,
+                'version' => $newVersion,
+                'nama_file' => $file->getClientOriginalName(),
+                'tgl_upload' => now(),
+                'tipe_file' => $file->getClientMimeType(),
+                'file_url' => $path,
+                'size_file' => $file->getSize(),
+                'status' => 'active',
+            ]);
+
+            // Handle based on document status
+            if ($dokumen->status === 'needs_revision') {
+                // Step-level revision: Only reset the specific approval that requested revision
+                $revisionApproval = DokumenApproval::where('dokumen_id', $dokumen->id)
+                    ->where('approval_status', 'revision_requested')
+                    ->first();
+
+                if ($revisionApproval) {
+                    $revisionApproval->update([
+                        'dokumen_version_id' => $dokumenVersion->id,
+                        'approval_status' => 'pending',
+                        'revision_notes' => null,
+                        'revision_requested_by' => null,
+                        'revision_requested_at' => null,
+                    ]);
+
+                    // Dispatch email notification for the reset approval
+                    SendApprovalNotification::dispatch($revisionApproval->fresh());
+                }
+
+                // Update all other pending approvals to use new version
+                DokumenApproval::where('dokumen_id', $dokumen->id)
+                    ->where('approval_status', 'pending')
+                    ->where('id', '!=', $revisionApproval?->id)
+                    ->update(['dokumen_version_id' => $dokumenVersion->id]);
+            } else {
+                // Rejection at specific step: Only reset from rejected step onwards
+                // Find the rejected approval to determine which step was rejected
+                $rejectedApproval = DokumenApproval::where('dokumen_id', $dokumen->id)
+                    ->where('approval_status', 'rejected')
+                    ->with('masterflowStep')
+                    ->first();
+
+                if ($rejectedApproval) {
+                    // Get the step order of rejected approval
+                    $rejectedStepOrder = $rejectedApproval->masterflowStep?->step_order ?? $rejectedApproval->approval_order ?? 1;
+
+                    // Get all approvals for this document
+                    $allApprovals = DokumenApproval::where('dokumen_id', $dokumen->id)
+                        ->with('masterflowStep')
+                        ->get();
+
+                    foreach ($allApprovals as $approval) {
+                        $approvalStepOrder = $approval->masterflowStep?->step_order ?? $approval->approval_order ?? 1;
+
+                        // Only reset approvals from rejected step onwards
+                        if ($approvalStepOrder >= $rejectedStepOrder) {
+                            $approval->update([
+                                'dokumen_version_id' => $dokumenVersion->id,
+                                'approval_status' => 'pending',
+                                'tgl_approve' => null,
+                                'alasan_reject' => null,
+                                'comment' => null,
+                                'signature_path' => null,
+                                'revision_notes' => null,
+                                'revision_requested_by' => null,
+                                'revision_requested_at' => null,
+                            ]);
+
+                            // Dispatch email notification for each reset approval
+                            SendApprovalNotification::dispatch($approval->fresh());
+                        } else {
+                            // Update the version_id for already approved steps but keep their status
+                            $approval->update([
+                                'dokumen_version_id' => $dokumenVersion->id,
+                            ]);
+                        }
+                    }
+
+                    // Set status_current to the rejected step (not from beginning)
+                    $dokumen->update([
+                        'status' => 'under_review',
+                        'status_current' => 'waiting_approval_' . $rejectedStepOrder,
+                    ]);
+                } else {
+                    // Fallback: No rejected approval found, reset all
+                    $allApprovals = DokumenApproval::where('dokumen_id', $dokumen->id)->get();
+
+                    foreach ($allApprovals as $approval) {
+                        $approval->update([
+                            'dokumen_version_id' => $dokumenVersion->id,
+                            'approval_status' => 'pending',
+                            'tgl_approve' => null,
+                            'alasan_reject' => null,
+                            'comment' => null,
+                            'signature_path' => null,
+                            'revision_notes' => null,
+                            'revision_requested_by' => null,
+                            'revision_requested_at' => null,
+                        ]);
+                        SendApprovalNotification::dispatch($approval->fresh());
+                    }
+
+                    $dokumen->update([
+                        'status' => 'under_review',
+                        'status_current' => 'waiting_approval_1',
+                    ]);
+                }
+            }
+
+            // Add revision comment
+            $commentText = 'Dokumen direvisi - Version ' . $newVersion;
+
+            // Re-apply signatures from earlier approved steps (if there are any)
+            // This ensures previous approvals stick to the revised document
+            try {
+                $approvedApprovals = DokumenApproval::where('dokumen_id', $dokumen->id)
+                    ->where('approval_status', 'approved')
+                    ->whereNotNull('signature_path')
+                    ->with(['user', 'masterflowStep'])
+                    ->get();
+
+                if ($approvedApprovals->isNotEmpty()) {
+                    Log::info('Re-applying signatures for revised document', [
+                        'dokumen_id' => $dokumen->id,
+                        'version' => $newVersion,
+                        'count' => $approvedApprovals->count()
+                    ]);
+
+                    $signatures = [];
+                    foreach ($approvedApprovals as $approval) {
+                        $signatures[] = [
+                            'path' => $approval->signature_path,
+                            'name' => $approval->user->name ?? '',
+                            'text' => $approval->masterflowStep?->step_name ?? 'Approved',
+                            'date' => $approval->tgl_approve?->format('d/m/Y H:i') ?? now()->format('d/m/Y H:i'),
+                        ];
+                    }
+
+                    $signedPdfPath = $pdfSignatureService->addMultipleSignaturesToPdf(
+                        $dokumenVersion->file_url,
+                        $signatures
+                    );
+
+                    $dokumenVersion->update([
+                        'signed_file_url' => $signedPdfPath,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to re-apply signatures for revision: ' . $e->getMessage());
+                // Continue without failing the request
+            }
+
+            if ($request->has('comment') || isset($validated['comment'])) {
+                $commentText .= "\n\nCatatan: " . ($request->comment ?? $validated['comment'] ?? '-');
+            }
+
+            Comment::create([
+                'dokumen_id' => $dokumen->id,
+                'content' => $commentText,
+                'user_id' => Auth::id(),
+                'created_at_custom' => now(),
+            ]);
+
+            // Log revision
+            RevisionLog::create([
+                'dokumen_id' => $dokumen->id,
+                'dokumen_version_id' => $dokumenVersion->id,
+                'user_id' => Auth::id(),
+                'action' => RevisionLog::ACTION_REVISED,
+                'changes' => [
+                    'previous_version' => $latestVersion?->version,
+                    'new_version' => $newVersion,
+                ],
+                'notes' => $validated['comment'] ?? 'Dokumen direvisi',
+            ]);
+
+            DB::commit();
+
+            Log::info('Document revision uploaded', [
+                'dokumen_id' => $dokumen->id,
+                'new_version' => $newVersion,
+                'user_id' => Auth::id(),
+            ]);
+
+            $successMessage = 'Revisi dokumen berhasil diupload! Version ' . $newVersion . ' telah dibuat.';
+
+            // Return appropriate response based on request type
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $successMessage,
+                    'dokumen' => $dokumen->fresh()->load([
+                        'user',
+                        'masterflow.steps.jabatan',
+                        'versions' => function ($query) {
+                            $query->orderBy('created_at', 'desc');
+                        },
+                        'approvals' => function ($query) {
+                            $query->with(['user', 'masterflowStep.jabatan']);
+                        },
+                    ]),
+                ]);
+            }
+
+            return redirect()->route('dokumen.show', $dokumen->id)
+                ->with('success', $successMessage);
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error('Failed to upload revision', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'dokumen_id' => $dokumen->id,
+            ]);
+
+            $message = 'Gagal mengupload revisi: ' . $e->getMessage();
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json(['message' => $message], 500);
+            }
+
+            return back()->withErrors(['error' => $message]);
+        }
+    }
+
+    /**
      * Download document file.
      */
     public function download(Dokumen $dokumen, $versionId = null)
@@ -569,11 +910,20 @@ class DokumenController extends Controller
             ? $dokumen->versions()->findOrFail($versionId)
             : $dokumen->latestVersion;
 
-        if (!$version || !Storage::disk('public')->exists($version->file_url)) {
+        if (!$version) {
+            return back()->withErrors(['error' => 'Versi dokumen tidak ditemukan.']);
+        }
+
+        // Prefer signed file if available
+        $path = ($version->signed_file_url && Storage::disk('public')->exists($version->signed_file_url))
+            ? $version->signed_file_url
+            : $version->file_url;
+
+        if (!$path || !Storage::disk('public')->exists($path)) {
             return back()->withErrors(['error' => 'File tidak ditemukan.']);
         }
 
-        $filePath = Storage::disk('public')->path($version->file_url);
+        $filePath = Storage::disk('public')->path($path);
         return response()->download($filePath, $version->nama_file);
     }
 }

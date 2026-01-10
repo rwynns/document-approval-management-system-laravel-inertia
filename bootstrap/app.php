@@ -18,6 +18,11 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
+        // Use custom CSRF verification middleware
+        $middleware->validateCsrfTokens(except: [
+            // Exempt these routes from CSRF verification
+        ]);
+
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,
@@ -33,5 +38,29 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // Handle CSRF token mismatch (419) for Inertia SPA
+        $exceptions->respond(function (\Symfony\Component\HttpFoundation\Response $response, \Throwable $e, \Illuminate\Http\Request $request) {
+            // Handle 419 Page Expired (CSRF token mismatch)
+            if ($response->getStatusCode() === 419) {
+                // For Inertia requests, return a proper Inertia response
+                if ($request->header('X-Inertia')) {
+                    return \Inertia\Inertia::location(url()->previous() ?: '/');
+                }
+
+                // For API requests, return JSON
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Session expired. Please refresh and try again.',
+                        'error' => 'csrf_token_mismatch',
+                    ], 419);
+                }
+
+                // For regular web requests, redirect back
+                return redirect()
+                    ->back()
+                    ->withErrors(['session' => 'Session telah kadaluarsa. Silakan coba lagi.']);
+            }
+
+            return $response;
+        });
     })->create();

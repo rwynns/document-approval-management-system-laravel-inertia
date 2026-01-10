@@ -40,8 +40,8 @@
     --sidebar-accent-foreground: #234621;
     --sidebar-border: #a2d99c;
     --sidebar-ring: #4ba443;
-    --font-sans: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    --font-serif: 'Crimson Text', 'Georgia', 'Times New Roman', serif;
+    --font-sans: 'Plus Jakarta Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-serif: 'Plus Jakarta Sans', 'Georgia', 'Times New Roman', serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
     --radius: 0.7rem;
     --shadow-2xs: 0px 4px 8px -1px hsl(0 0% 0% / 0.05);

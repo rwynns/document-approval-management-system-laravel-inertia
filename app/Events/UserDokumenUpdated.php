@@ -19,16 +19,7 @@ class UserDokumenUpdated implements ShouldBroadcastNow
      */
     public function __construct(public Dokumen $dokumen)
     {
-        // Load all necessary relations
-        $this->dokumen->load([
-            'user',
-            'company',
-            'aplikasi',
-            'masterflow.steps.jabatan',
-            'versions',
-            'approvals.user.profile',
-            'approvals.masterflowStep.jabatan',
-        ]);
+        // Don't load relations to avoid payload too large error
     }
 
     /**
@@ -50,6 +41,7 @@ class UserDokumenUpdated implements ShouldBroadcastNow
 
     /**
      * Get the data to broadcast.
+     * Only send essential data to avoid "Payload too large" error.
      */
     public function broadcastWith(): array
     {
@@ -60,9 +52,18 @@ class UserDokumenUpdated implements ShouldBroadcastNow
             'status' => $this->dokumen->status
         ]);
 
+        // Send minimal payload - frontend should reload for full data
         return [
-            'dokumen' => $this->dokumen,
-            'timestamp' => now(),
+            'dokumen' => [
+                'id' => $this->dokumen->id,
+                'judul_dokumen' => $this->dokumen->judul_dokumen,
+                'nomor_dokumen' => $this->dokumen->nomor_dokumen,
+                'status' => $this->dokumen->status,
+                'status_current' => $this->dokumen->status_current,
+                'user_id' => $this->dokumen->user_id,
+                'updated_at' => $this->dokumen->updated_at?->toISOString(),
+            ],
+            'timestamp' => now()->toISOString(),
         ];
     }
 }

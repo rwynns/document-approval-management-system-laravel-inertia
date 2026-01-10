@@ -126,6 +126,23 @@ class Dokumen extends Model
     }
 
     /**
+     * Get all revision logs for this document.
+     */
+    public function revisionLogs(): HasMany
+    {
+        return $this->hasMany(RevisionLog::class)->orderBy('created_at', 'desc');
+    }
+
+    /**
+     * Check if document needs revision (step-level revision requested).
+     */
+    public function needsRevision(): bool
+    {
+        return $this->status === 'needs_revision' ||
+            $this->approvals()->where('approval_status', 'revision_requested')->exists();
+    }
+
+    /**
      * Get pending approvals for this document.
      */
     public function pendingApprovals(): HasMany
@@ -160,6 +177,100 @@ class Dokumen extends Model
 
         $approvedCount = $this->approvals()->where('approval_status', 'approved')->count();
         return ($approvedCount / $totalApprovals) * 100;
+    }
+
+    /**
+     * Get next pending approvers information.
+     */
+    public function getNextApprovers(): array
+    {
+        // Get all pending approvals ordered by approval_order
+        $pendingApprovals = $this->approvals()
+            ->where('approval_status', 'pending')
+            ->with(['user', 'masterflowStep.jabatan'])
+            ->orderBy('approval_order')
+            ->get();
+
+        if ($pendingApprovals->isEmpty()) {
+            return [];
+        }
+
+        // Get the next approval order (lowest order number among pending)
+        $nextOrder = $pendingApprovals->min('approval_order');
+
+        // Get all approvals at this order (could be a group)
+        $nextApprovals = $pendingApprovals->where('approval_order', $nextOrder);
+
+        return $nextApprovals->map(function ($approval) {
+            return [
+                'id' => $approval->id,
+                'user' => $approval->user,
+                'approver_email' => $approval->approver_email,
+                'step_name' => $approval->masterflowStep?->step_name,
+                'jabatan_name' => $approval->masterflowStep?->jabatan?->name,
+                'approval_order' => $approval->approval_order,
+                'group_index' => $approval->group_index,
+                'jenis_group' => $approval->jenis_group,
+                'tgl_deadline' => $approval->tgl_deadline,
+            ];
+        })->values()->toArray();
+    }
+
+    /**
+     * Get current approval step description.
+     */
+    public function getCurrentStepDescription(): ?string
+    {
+        $nextApprovers = $this->getNextApprovers();
+
+        if (empty($nextApprovers)) {
+            if ($this->isFullyApproved()) {
+                return 'Dokumen telah disetujui oleh semua pihak';
+            } elseif ($this->isRejected()) {
+                return 'Dokumen ditolak';
+            }
+            return null;
+        }
+
+        $firstApprover = $nextApprovers[0];
+        $stepName = $firstApprover['step_name'] ?? 'Approval';
+        $jenisGroup = $firstApprover['jenis_group'];
+
+        if (count($nextApprovers) > 1 && $jenisGroup) {
+            // Group approval
+            switch ($jenisGroup) {
+                case 'all_required':
+                    $names = collect($nextApprovers)->pluck('user.name')->filter()->implode(', ');
+                    return "Menunggu persetujuan dari semua: {$names} ({$stepName})";
+                case 'any_one':
+                    $names = collect($nextApprovers)->pluck('user.name')->filter()->implode(', ');
+                    return "Menunggu persetujuan dari salah satu: {$names} ({$stepName})";
+                case 'majority':
+                    $count = count($nextApprovers);
+                    $names = collect($nextApprovers)->pluck('user.name')->filter()->implode(', ');
+                    return "Menunggu persetujuan mayoritas dari: {$names} ({$stepName})";
+            }
+        }
+
+        // Single approver
+        $name = $firstApprover['user']['name'] ?? $firstApprover['approver_email'] ?? 'Approver';
+        return "Menunggu persetujuan dari {$name} ({$stepName})";
+    }
+
+    /**
+     * Get approval status with step information.
+     */
+    public function getDetailedStatus(): array
+    {
+        return [
+            'status' => $this->status,
+            'status_current' => $this->status_current,
+            'is_fully_approved' => $this->isFullyApproved(),
+            'is_rejected' => $this->isRejected(),
+            'next_approvers' => $this->getNextApprovers(),
+            'current_step_description' => $this->getCurrentStepDescription(),
+            'approval_progress' => $this->getApprovalProgress(),
+        ];
     }
 
     /**

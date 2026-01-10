@@ -1,16 +1,82 @@
 import { AppSidebar } from '@/components/app-sidebar';
-import { EnhancedDocumentTable } from '@/components/enhanced-document-table';
-import { SectionCards } from '@/components/section-cards';
 import { SiteHeader } from '@/components/site-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { IconFileText, IconSparkles, IconUsers } from '@tabler/icons-react';
-import { Activity, CalendarDays, CheckCircle2, Clock } from 'lucide-react';
+import { Activity, CheckCircle2, Clock, FileText, XCircle } from 'lucide-react';
 
-export default function AdminDashboard() {
+interface Stats {
+    pending_reviews: number;
+    approved_today: number;
+    total_documents: number;
+    active_users: number;
+}
+
+interface RecentDocument {
+    id: number;
+    nomor_dokumen: string;
+    judul_dokumen: string;
+    status: string;
+    status_current: string;
+    tgl_pengajuan: string | null;
+    tgl_deadline: string | null;
+    user_name: string;
+    masterflow_name: string;
+    created_at: string;
+}
+
+interface RecentActivity {
+    id: number;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    description: string;
+    time: string;
+}
+
+interface ContextInfo {
+    company: string;
+    aplikasi: string;
+    role: string;
+}
+
+interface AdminDashboardProps {
+    stats: Stats;
+    recent_documents: RecentDocument[];
+    recent_activity: RecentActivity[];
+    current_context: ContextInfo;
+}
+
+export default function AdminDashboard({ stats, recent_documents, recent_activity, current_context }: AdminDashboardProps) {
+    const getActivityIcon = (type: string) => {
+        switch (type) {
+            case 'success':
+                return <CheckCircle2 className="mt-0.5 h-4 w-4 text-green-500" />;
+            case 'error':
+                return <XCircle className="mt-0.5 h-4 w-4 text-red-500" />;
+            case 'warning':
+                return <Clock className="mt-0.5 h-4 w-4 text-orange-500" />;
+            default:
+                return <Activity className="mt-0.5 h-4 w-4 text-blue-500" />;
+        }
+    };
+
+    const getStatusBadge = (status: string) => {
+        const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
+            draft: { variant: 'secondary', label: 'Draft' },
+            pending: { variant: 'outline', label: 'Pending' },
+            in_review: { variant: 'default', label: 'In Review' },
+            approved: { variant: 'default', label: 'Approved' },
+            rejected: { variant: 'destructive', label: 'Rejected' },
+            revision_requested: { variant: 'outline', label: 'Revision' },
+        };
+
+        const config = statusConfig[status] || { variant: 'secondary', label: status };
+        return <Badge variant={config.variant}>{config.label}</Badge>;
+    };
+
     return (
         <>
             <Head title="Admin Dashboard" />
@@ -29,19 +95,22 @@ export default function AdminDashboard() {
                                             Admin Dashboard
                                         </h1>
                                         <p className="font-sans text-sm text-muted-foreground">
-                                            Welcome to Admin Dashboard - Document Approval Management System.
+                                            {current_context?.company} - {current_context?.aplikasi}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <Badge variant="outline" className="font-sans text-xs">
-                                            Realtime Enabled
+                                            {current_context?.role}
                                         </Badge>
-                                        <Button size="sm" className="hidden font-sans sm:flex">
-                                            <IconFileText className="mr-2 h-4 w-4" />
-                                            New Document
-                                        </Button>
+                                        <Link href="/dokumen">
+                                            <Button size="sm" className="hidden font-sans sm:flex">
+                                                <IconFileText className="mr-2 h-4 w-4" />
+                                                New Document
+                                            </Button>
+                                        </Link>
                                     </div>
                                 </div>
+
                                 {/* Stats Cards */}
                                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                                     <Card className="border-border bg-card">
@@ -49,9 +118,9 @@ export default function AdminDashboard() {
                                             <div className="flex items-center justify-between">
                                                 <div className="space-y-1">
                                                     <p className="font-sans text-sm font-medium text-muted-foreground">Pending Reviews</p>
-                                                    <p className="font-sans text-2xl font-bold text-foreground">12</p>
+                                                    <p className="font-sans text-2xl font-bold text-foreground">{stats?.pending_reviews ?? 0}</p>
                                                 </div>
-                                                <Clock className="h-8 w-8 text-accent" />
+                                                <Clock className="h-8 w-8 text-orange-500" />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -60,9 +129,9 @@ export default function AdminDashboard() {
                                             <div className="flex items-center justify-between">
                                                 <div className="space-y-1">
                                                     <p className="font-sans text-sm font-medium text-muted-foreground">Approved Today</p>
-                                                    <p className="font-sans text-2xl font-bold text-foreground">8</p>
+                                                    <p className="font-sans text-2xl font-bold text-foreground">{stats?.approved_today ?? 0}</p>
                                                 </div>
-                                                <CheckCircle2 className="h-8 w-8 text-primary" />
+                                                <CheckCircle2 className="h-8 w-8 text-green-500" />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -71,9 +140,9 @@ export default function AdminDashboard() {
                                             <div className="flex items-center justify-between">
                                                 <div className="space-y-1">
                                                     <p className="font-sans text-sm font-medium text-muted-foreground">Total Documents</p>
-                                                    <p className="font-sans text-2xl font-bold text-foreground">124</p>
+                                                    <p className="font-sans text-2xl font-bold text-foreground">{stats?.total_documents ?? 0}</p>
                                                 </div>
-                                                <IconFileText className="h-8 w-8 text-chart-3" />
+                                                <FileText className="h-8 w-8 text-blue-500" />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -82,66 +151,76 @@ export default function AdminDashboard() {
                                             <div className="flex items-center justify-between">
                                                 <div className="space-y-1">
                                                     <p className="font-sans text-sm font-medium text-muted-foreground">Active Users</p>
-                                                    <p className="font-sans text-2xl font-bold text-foreground">45</p>
+                                                    <p className="font-sans text-2xl font-bold text-foreground">{stats?.active_users ?? 0}</p>
                                                 </div>
-                                                <IconUsers className="h-8 w-8 text-chart-2" />
+                                                <IconUsers className="h-8 w-8 text-purple-500" />
                                             </div>
                                         </CardContent>
                                     </Card>
                                 </div>
 
-                                {/* Recent Activity & Quick Actions */}
+                                {/* Recent Activity & Documents */}
                                 <div className="grid gap-6 lg:grid-cols-3">
                                     <div className="lg:col-span-2">
                                         <div className="space-y-4">
                                             <div className="flex items-center justify-between">
                                                 <h2 className="font-serif text-lg font-semibold text-foreground">Recent Documents</h2>
-                                                <Button variant="outline" size="sm" className="font-sans">
-                                                    View All
-                                                </Button>
+                                                <Link href="/dokumen">
+                                                    <Button variant="outline" size="sm" className="font-sans">
+                                                        View All
+                                                    </Button>
+                                                </Link>
                                             </div>
-                                            <EnhancedDocumentTable />
+                                            {recent_documents && recent_documents.length > 0 ? (
+                                                <div className="space-y-2">
+                                                    {recent_documents.slice(0, 5).map((doc) => (
+                                                        <div key={doc.id} className="flex items-center justify-between rounded-lg border p-3">
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <p className="font-medium">{doc.judul_dokumen}</p>
+                                                                    {getStatusBadge(doc.status)}
+                                                                </div>
+                                                                <p className="text-sm text-muted-foreground">
+                                                                    {doc.nomor_dokumen} • {doc.user_name} • {doc.created_at}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="rounded-lg border border-dashed p-8 text-center">
+                                                    <FileText className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                                                    <p className="mt-2 text-sm text-muted-foreground">No documents yet</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
+
                                     <div className="space-y-6">
                                         <div>
-                                            <h2 className="mb-4 font-serif text-lg font-semibold text-foreground">Quick Actions</h2>
-                                            <SectionCards />
-                                        </div>
-                                        <div>
                                             <h2 className="mb-4 font-serif text-lg font-semibold text-foreground">Recent Activity</h2>
-                                            <div className="space-y-3">
-                                                <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
-                                                    <Activity className="mt-0.5 h-4 w-4 text-chart-3" />
-                                                    <div className="flex-1 space-y-1">
-                                                        <p className="font-sans text-sm font-medium text-foreground">Document Approved</p>
-                                                        <p className="font-sans text-xs text-muted-foreground">
-                                                            Annual Report 2024 has been approved by John Doe
-                                                        </p>
-                                                    </div>
-                                                    <span className="font-sans text-xs text-muted-foreground">2m ago</span>
+                                            {recent_activity && recent_activity.length > 0 ? (
+                                                <div className="space-y-3">
+                                                    {recent_activity.map((activity) => (
+                                                        <div
+                                                            key={activity.id}
+                                                            className="flex items-start gap-3 rounded-lg border border-border bg-card p-3"
+                                                        >
+                                                            {getActivityIcon(activity.type)}
+                                                            <div className="flex-1 space-y-1">
+                                                                <p className="font-sans text-sm font-medium text-foreground">{activity.title}</p>
+                                                                <p className="font-sans text-xs text-muted-foreground">{activity.description}</p>
+                                                            </div>
+                                                            <span className="font-sans text-xs text-muted-foreground">{activity.time}</span>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                                <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
-                                                    <CalendarDays className="mt-0.5 h-4 w-4 text-primary" />
-                                                    <div className="flex-1 space-y-1">
-                                                        <p className="font-sans text-sm font-medium text-foreground">New Submission</p>
-                                                        <p className="font-sans text-xs text-muted-foreground">
-                                                            Budget Proposal Q1 submitted for review
-                                                        </p>
-                                                    </div>
-                                                    <span className="font-sans text-xs text-muted-foreground">5m ago</span>
+                                            ) : (
+                                                <div className="rounded-lg border border-dashed p-4 text-center">
+                                                    <Activity className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                                                    <p className="mt-2 text-sm text-muted-foreground">No recent activity</p>
                                                 </div>
-                                                <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
-                                                    <IconUsers className="mt-0.5 h-4 w-4 text-accent" />
-                                                    <div className="flex-1 space-y-1">
-                                                        <p className="font-sans text-sm font-medium text-foreground">User Assignment</p>
-                                                        <p className="font-sans text-xs text-muted-foreground">
-                                                            Jane Smith assigned to Marketing Project
-                                                        </p>
-                                                    </div>
-                                                    <span className="font-sans text-xs text-muted-foreground">10m ago</span>
-                                                </div>
-                                            </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\UserDashboardController;
+use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\DokumenController;
 use App\Http\Controllers\DokumenVersionController;
 use App\Http\Controllers\DokumenApprovalController;
 use App\Http\Controllers\CommentController;
 use App\Models\Masterflow;
+use App\Services\ContextService;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -20,26 +22,23 @@ Route::get('/', function () {
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', function () {
-        $user = Auth::user();
+        // Use ContextService to get the current context's role
+        $contextService = app(ContextService::class);
+        $context = $contextService->getContext();
 
-        // Determine redirect based on user role
-        if ($user->userAuths && $user->userAuths->count() > 0) {
-            $primaryRole = $user->userAuths->first()->role;
+        if ($context && $context->role) {
+            $roleName = strtolower($context->role->role_name);
 
-            if ($primaryRole) {
-                $roleName = strtolower($primaryRole->role_name);
-
-                // Redirect based on role
-                switch ($roleName) {
-                    case 'super admin':
-                        return redirect()->route('super-admin.dashboard');
-                    case 'admin':
-                        return redirect()->route('admin.dashboard');
-                    case 'user':
-                        return redirect()->route('user.dashboard');
-                    default:
-                        return redirect()->route('user.dashboard');
-                }
+            // Redirect based on current context's role
+            switch ($roleName) {
+                case 'super admin':
+                    return redirect()->route('super-admin.dashboard');
+                case 'admin':
+                    return redirect()->route('admin.dashboard');
+                case 'user':
+                    return redirect()->route('user.dashboard');
+                default:
+                    return redirect()->route('user.dashboard');
             }
         }
 
@@ -51,7 +50,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/role-management', function () {
         return Inertia::render('management/role-management');
     })->name('role-management');
+
+    // Context Management Routes
+    Route::get('/contexts', [\App\Http\Controllers\ContextController::class, 'index'])->name('context.index');
+    Route::get('/contexts/current', [\App\Http\Controllers\ContextController::class, 'current'])->name('context.current');
+    Route::post('/contexts/switch', [\App\Http\Controllers\ContextController::class, 'switch'])->name('context.switch');
+    Route::get('/context/select', [\App\Http\Controllers\ContextController::class, 'select'])->name('context.select');
 });
+
 
 // Role-based Routes (No middleware - handle auth via Sanctum in frontend)
 
@@ -84,9 +90,7 @@ Route::middleware(['auth', 'check.role:Super Admin'])->group(function () {
 
 // Admin Routes  
 Route::middleware(['auth', 'check.role:Admin'])->group(function () {
-    Route::get('/admin/dashboard', function () {
-        return Inertia::render('admin/dashboard');
-    })->name('admin.dashboard');
+    Route::get('/admin/dashboard', [AdminDashboardController::class, 'index'])->name('admin.dashboard');
 
     Route::get('/admin/dokumen', function () {
         return Inertia::render('admin/dokumen');
@@ -154,6 +158,14 @@ Route::middleware(['auth'])->group(function () {
     Route::post('approvals/{approval}/approve', [\App\Http\Controllers\DokumenApprovalController::class, 'approve'])->name('approvals.approve');
     Route::post('approvals/{approval}/reject', [\App\Http\Controllers\DokumenApprovalController::class, 'reject'])->name('approvals.reject');
     Route::post('approvals/{approval}/delegate', [\App\Http\Controllers\DokumenApprovalController::class, 'delegate'])->name('approvals.delegate');
+    Route::post('approvals/{approval}/request-revision', [\App\Http\Controllers\DokumenApprovalController::class, 'requestRevision'])->name('approvals.request-revision');
+
+    // Document revision history
+    Route::get('dokumen/{dokumen}/history', [\App\Http\Controllers\RevisionHistoryController::class, 'index'])->name('dokumen.history');
+    Route::get('dokumen/{dokumen}/compare', [\App\Http\Controllers\RevisionHistoryController::class, 'compare'])->name('dokumen.compare');
+
+    // Document revision upload
+    Route::post('dokumen/{dokumen}/upload-revision', [\App\Http\Controllers\DokumenController::class, 'uploadRevision'])->name('dokumen.upload-revision');
 
     // Comments
     Route::post('dokumen/{dokumen}/comments', [\App\Http\Controllers\CommentController::class, 'store'])->name('comments.store');

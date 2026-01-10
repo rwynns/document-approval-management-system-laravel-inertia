@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Route;
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
 
+
 // Protected routes - support both web session and sanctum token
 Route::middleware(['auth:sanctum,web'])->group(function () {
     // Authentication
@@ -53,16 +54,17 @@ Route::middleware(['auth:sanctum,web'])->group(function () {
 
     // User Dashboard API Routes
     Route::prefix('user')->group(function () {
-        Route::get('/statistics', [UserDashboardController::class, 'getStatistics']);
-        Route::get('/recent-documents', [UserDashboardController::class, 'getRecentDocuments']);
+        Route::get('/statistics', [UserDashboardController::class, 'getStatisticsApi']);
+        Route::get('/recent-documents', [UserDashboardController::class, 'getRecentDocumentsApi']);
     });
 
     // Dokumen API Routes
     Route::get('/dokumen', [DokumenController::class, 'apiIndex']);
+    Route::post('/dokumen/{dokumen}/upload-revision', [DokumenController::class, 'uploadRevision']);
     Route::delete('/dokumen/{dokumen}', [DokumenController::class, 'destroy']);
 
     // Masterflow API Routes (via UserDashboardController)
-    Route::get('/masterflows', [UserDashboardController::class, 'getMasterflows']);
+    Route::get('/masterflows', [UserDashboardController::class, 'getMasterflowsApi']);
     Route::get('/masterflows/{masterflow}/steps', [\App\Http\Controllers\Admin\MasterflowController::class, 'getSteps']);
 
     // User API Routes for approval flow

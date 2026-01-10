@@ -3,8 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\Dokumen;
+use App\Models\DokumenApproval;
 use App\Models\Masterflow;
 use App\Models\UsersAuth;
+use App\Models\RevisionLog;
+use App\Services\ContextService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -12,52 +16,37 @@ use Illuminate\Support\Facades\Log;
 
 class UserDashboardController extends Controller
 {
+    public function __construct(
+        protected ContextService $contextService
+    ) {}
+
     /**
-     * Display the user dashboard.
+     * Display the user dashboard with real data based on current context.
      */
     public function index()
     {
         $user = Auth::user();
+        $context = $this->contextService->getContext();
 
-        // Load related data
-        $userAuths = UsersAuth::where('user_id', $user->id)->with(['role', 'company', 'jabatan'])->get();
-        $userProfile = $user->profile;
+        // Get context data
+        $companyId = $context?->company_id;
+        $aplikasiId = $context?->aplikasi_id;
+        $roleName = $context?->role?->role_name ?? 'User';
+        $companyName = $context?->company?->name ?? 'No Company Assigned';
+        $jabatanName = $context?->jabatan?->name ?? 'No Position Assigned';
 
-        // Get user's primary role name
-        $roleName = 'User';
-        $companyName = 'No Company Assigned';
-        $jabatanName = 'No Position Assigned';
+        // Get real statistics
+        $statistics = $this->getStatistics($user, $companyId, $aplikasiId);
 
-        if ($userAuths && $userAuths->count() > 0) {
-            $primaryAuth = $userAuths->first();
-
-            if ($primaryAuth->role) {
-                $roleName = $primaryAuth->role->role_name;
-            }
-
-            if ($primaryAuth->company) {
-                $companyName = $primaryAuth->company->name;
-            }
-
-            if ($primaryAuth->jabatan) {
-                $jabatanName = $primaryAuth->jabatan->name;
-            }
-        }
+        // Get real recent documents
+        $recentDocuments = $this->getRecentDocuments($user, $companyId, $aplikasiId);
 
         // Get available masterflows for user's company
-        $availableMasterflows = collect();
-        if ($userAuths && $userAuths->count() > 0) {
-            $companyId = $userAuths->first()->company_id;
-            if ($companyId) {
-                $availableMasterflows = Masterflow::where('company_id', $companyId)
-                    ->where('is_active', true)
-                    ->with(['steps.jabatan', 'company'])
-                    ->orderBy('name')
-                    ->get();
-            }
-        }
+        $availableMasterflows = $this->getMasterflowsForContext($companyId);
 
-        // Mock data for documents statistics - replace with actual document model when available
+        // Get recent activity
+        $recentActivity = $this->getRecentActivity($user);
+
         $dashboardData = [
             'user' => [
                 'name' => $user->name,
@@ -65,44 +54,130 @@ class UserDashboardController extends Controller
                 'role' => $roleName,
                 'company' => $companyName,
                 'jabatan' => $jabatanName,
-                'profile' => $userProfile ? [
-                    'phone' => $userProfile->no_hp,
-                    'address' => $userProfile->alamat,
+                'profile' => $user->profile ? [
+                    'phone' => $user->profile->no_hp,
+                    'address' => $user->profile->alamat,
                 ] : null
             ],
-            'statistics' => [
-                'pending_documents' => 5, // TODO: Replace with actual document count
-                'approved_documents' => 18,
-                'total_submitted' => 23,
-                'rejected_documents' => 0
+            'statistics' => $statistics,
+            'recent_documents' => $recentDocuments,
+            'available_masterflows' => $availableMasterflows,
+            'recent_activity' => $recentActivity,
+            // Note: Use 'current_context' to avoid overwriting shared 'context' prop
+            'current_context' => [
+                'company' => $companyName,
+                'aplikasi' => $context?->aplikasi?->name ?? 'All Applications',
+                'role' => $roleName,
             ],
-            'recent_documents' => [
-                [
-                    'id' => 1,
-                    'name' => 'Laporan Keuangan Bulanan',
-                    'status' => 'pending',
-                    'submitted_at' => '2025-01-15',
-                    'category' => 'Keuangan',
-                    'size' => '2.4 MB'
-                ],
-                [
-                    'id' => 2,
-                    'name' => 'Proposal Kegiatan Q1',
-                    'status' => 'approved',
-                    'submitted_at' => '2025-01-14',
-                    'category' => 'Operasional',
-                    'size' => '1.8 MB'
-                ],
-                [
-                    'id' => 3,
-                    'name' => 'Dokumentasi Sistem',
-                    'status' => 'pending',
-                    'submitted_at' => '2025-01-13',
-                    'category' => 'Teknis',
-                    'size' => '3.2 MB'
-                ]
-            ],
-            'available_masterflows' => $availableMasterflows->take(5)->map(function ($masterflow) {
+        ];
+
+        return Inertia::render('user/dashboard', $dashboardData);
+    }
+
+    /**
+     * Get real statistics for user's documents.
+     */
+    private function getStatistics($user, $companyId, $aplikasiId): array
+    {
+        // Base query for user's own documents
+        $baseQuery = Dokumen::where('user_id', $user->id);
+
+        if ($companyId) {
+            $baseQuery->where('company_id', $companyId);
+        }
+
+        if ($aplikasiId) {
+            $baseQuery->where('aplikasi_id', $aplikasiId);
+        }
+
+        // Count by status
+        $pendingDocuments = (clone $baseQuery)
+            ->whereIn('status', ['draft', 'pending', 'in_review', 'revision_requested'])
+            ->count();
+
+        $approvedDocuments = (clone $baseQuery)
+            ->where('status', 'approved')
+            ->count();
+
+        $rejectedDocuments = (clone $baseQuery)
+            ->where('status', 'rejected')
+            ->count();
+
+        $totalSubmitted = (clone $baseQuery)->count();
+
+        // Count approvals assigned to user
+        $approvalQuery = DokumenApproval::where('user_id', $user->id);
+
+        $pendingApprovals = (clone $approvalQuery)
+            ->where('approval_status', 'pending')
+            ->count();
+
+        $processedApprovals = (clone $approvalQuery)
+            ->whereIn('approval_status', ['approved', 'rejected'])
+            ->count();
+
+        return [
+            'pending_documents' => $pendingDocuments,
+            'approved_documents' => $approvedDocuments,
+            'rejected_documents' => $rejectedDocuments,
+            'total_submitted' => $totalSubmitted,
+            'pending_approvals' => $pendingApprovals,
+            'processed_approvals' => $processedApprovals,
+        ];
+    }
+
+    /**
+     * Get recent documents for user.
+     */
+    private function getRecentDocuments($user, $companyId, $aplikasiId): array
+    {
+        $query = Dokumen::with(['masterflow', 'latestVersion'])
+            ->where('user_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->limit(10);
+
+        if ($companyId) {
+            $query->where('company_id', $companyId);
+        }
+
+        if ($aplikasiId) {
+            $query->where('aplikasi_id', $aplikasiId);
+        }
+
+        return $query->get()->map(function ($doc) {
+            // Calculate file size from latest version if available
+            $size = 'N/A';
+            if ($doc->latestVersion && $doc->latestVersion->file_size) {
+                $size = $this->formatBytes($doc->latestVersion->file_size);
+            }
+
+            return [
+                'id' => $doc->id,
+                'name' => $doc->judul_dokumen,
+                'status' => $doc->status,
+                'submitted_at' => $doc->tgl_pengajuan?->format('Y-m-d') ?? $doc->created_at->format('Y-m-d'),
+                'category' => $doc->masterflow?->name ?? 'General',
+                'size' => $size,
+            ];
+        })->toArray();
+    }
+
+    /**
+     * Get masterflows available for the context.
+     */
+    private function getMasterflowsForContext($companyId): array
+    {
+        if (!$companyId) {
+            return [];
+        }
+
+        return Masterflow::where('company_id', $companyId)
+            ->where('is_active', true)
+            ->with(['steps.jabatan', 'company'])
+            ->orderBy('name')
+            ->take(5)
+            ->get()
+            ->map(function ($masterflow) {
                 return [
                     'id' => $masterflow->id,
                     'name' => $masterflow->name,
@@ -110,119 +185,107 @@ class UserDashboardController extends Controller
                     'steps_count' => $masterflow->steps ? $masterflow->steps->count() : 0,
                     'company' => $masterflow->company ? $masterflow->company->name : null
                 ];
+            })->toArray();
+    }
+
+    /**
+     * Get recent activity for user.
+     */
+    private function getRecentActivity($user): array
+    {
+        return RevisionLog::with(['dokumen', 'user'])
+            ->where(function ($query) use ($user) {
+                $query->where('user_id', $user->id)
+                    ->orWhereHas('dokumen', function ($q) use ($user) {
+                        $q->where('user_id', $user->id);
+                    });
             })
-        ];
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get()
+            ->map(function ($log) {
+                return [
+                    'id' => $log->id,
+                    'action' => $log->action,
+                    'description' => $this->formatActivityDescription($log),
+                    'timestamp' => $log->created_at->diffForHumans(),
+                    'user_name' => $log->user->name,
+                    'document_name' => $log->dokumen->judul_dokumen ?? 'Unknown Document',
+                ];
+            })->toArray();
+    }
 
-        // Debug logging
-        Log::info('UserDashboard Data:', [
-            'user_id' => $user->id,
-            'company_name' => $companyName,
-            'jabatan_name' => $jabatanName,
-            'user_data' => $dashboardData['user']
-        ]);
+    private function formatActivityDescription($log): string
+    {
+        $docName = $log->dokumen->judul_dokumen ?? 'Dokumen';
+        $actor = $log->user_id === Auth::id() ? 'You' : $log->user->name;
 
-        return Inertia::render('user/dashboard', $dashboardData);
+        return match ($log->action) {
+            RevisionLog::ACTION_CREATED => "$actor created document '$docName'",
+            RevisionLog::ACTION_REVISED => "$actor uploaded a revision for '$docName'",
+            RevisionLog::ACTION_SUBMITTED => "$actor submitted '$docName' for approval",
+            RevisionLog::ACTION_APPROVED => "$actor approved '$docName'",
+            RevisionLog::ACTION_REJECTED => "$actor rejected '$docName'",
+            RevisionLog::ACTION_REVISION_REQUESTED => "$actor requested revision for '$docName'",
+            RevisionLog::ACTION_CANCELLED => "$actor cancelled submission of '$docName'",
+            default => "$actor performed " . $log->action . " on '$docName'",
+        };
     }
 
     /**
-     * Get user dashboard statistics.
+     * Format bytes to human readable format.
      */
-    public function getStatistics()
+    private function formatBytes($bytes, $precision = 2): string
     {
-        $user = Auth::user();
+        if ($bytes == 0) return '0 B';
 
-        // TODO: Replace with actual document model queries when Document model is available
-        // For now, return mock data that varies based on user
-        $baseCount = $user->id * 3; // Simple variation based on user ID
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $pow = floor(log($bytes) / log(1024));
+        $pow = min($pow, count($units) - 1);
 
-        $statistics = [
-            'pending_documents' => max(1, $baseCount % 8),
-            'approved_documents' => max(5, ($baseCount * 2) % 25),
-            'rejected_documents' => max(0, $baseCount % 3),
-            'total_submitted' => 0 // Will be calculated below
-        ];
+        $bytes /= pow(1024, $pow);
 
-        $statistics['total_submitted'] = $statistics['pending_documents'] +
-            $statistics['approved_documents'] +
-            $statistics['rejected_documents'];
-
-        return response()->json($statistics);
+        return round($bytes, $precision) . ' ' . $units[$pow];
     }
 
     /**
-     * Get user's recent documents.
+     * Get user dashboard statistics (API endpoint).
      */
-    public function getRecentDocuments()
+    public function getStatisticsApi()
     {
         $user = Auth::user();
+        $context = $this->contextService->getContext();
 
-        // TODO: Replace with actual Document model query when available
-        // For now, generate dynamic mock data based on user
-        $statuses = ['pending', 'approved', 'rejected'];
-        $categories = ['Keuangan', 'Operasional', 'Teknis', 'Administrasi', 'Pemasaran'];
-        $priorities = ['high', 'medium', 'low'];
+        $companyId = $context?->company_id;
+        $aplikasiId = $context?->aplikasi_id;
 
-        $documentNames = [
-            'Laporan Keuangan Bulanan',
-            'Proposal Kegiatan Q1',
-            'Dokumentasi Sistem',
-            'Rencana Anggaran',
-            'Laporan Progress',
-            'Surat Permohonan',
-            'Analisis Market',
-            'Evaluasi Kinerja'
-        ];
-
-        $recentDocuments = [];
-
-        for ($i = 1; $i <= 5; $i++) {
-            $recentDocuments[] = [
-                'id' => $user->id * 10 + $i,
-                'name' => $documentNames[($user->id + $i - 1) % count($documentNames)],
-                'status' => $statuses[($user->id + $i) % count($statuses)],
-                'submitted_at' => now()->subDays($i)->format('Y-m-d'),
-                'category' => $categories[($user->id + $i) % count($categories)],
-                'size' => number_format(rand(100, 500) / 100, 1) . ' MB',
-                'priority' => $priorities[$i % count($priorities)]
-            ];
-        }
-
-        return response()->json($recentDocuments);
+        return response()->json($this->getStatistics($user, $companyId, $aplikasiId));
     }
 
     /**
-     * Get user's available masterflows for document submission.
+     * Get user's recent documents (API endpoint).
      */
-    public function getMasterflows()
+    public function getRecentDocumentsApi()
     {
         $user = Auth::user();
+        $context = $this->contextService->getContext();
 
-        // Get user's company ID
-        $userAuths = UsersAuth::where('user_id', $user->id)->with(['company'])->get();
-        $availableMasterflows = collect();
+        $companyId = $context?->company_id;
+        $aplikasiId = $context?->aplikasi_id;
 
-        if ($userAuths && $userAuths->count() > 0) {
-            $companyId = $userAuths->first()->company_id;
-            if ($companyId) {
-                $availableMasterflows = Masterflow::where('company_id', $companyId)
-                    ->where('is_active', true)
-                    ->with(['steps.jabatan', 'company'])
-                    ->orderBy('name')
-                    ->get();
-            }
-        }
+        return response()->json($this->getRecentDocuments($user, $companyId, $aplikasiId));
+    }
+
+    /**
+     * Get user's available masterflows for document submission (API endpoint).
+     */
+    public function getMasterflowsApi()
+    {
+        $context = $this->contextService->getContext();
+        $companyId = $context?->company_id;
 
         return response()->json([
-            'masterflows' => $availableMasterflows->map(function ($masterflow) {
-                return [
-                    'id' => $masterflow->id,
-                    'name' => $masterflow->name,
-                    'description' => $masterflow->description,
-                    'steps_count' => $masterflow->steps ? $masterflow->steps->count() : 0,
-                    'company' => $masterflow->company ? $masterflow->company->name : null,
-                    'is_active' => $masterflow->is_active
-                ];
-            })
+            'masterflows' => $this->getMasterflowsForContext($companyId)
         ]);
     }
 }

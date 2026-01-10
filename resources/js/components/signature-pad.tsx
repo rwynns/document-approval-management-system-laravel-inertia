@@ -197,14 +197,14 @@ export default function SignaturePad({ onSignatureComplete, onCancel }: Signatur
     return (
         <div className="space-y-4">
             <Tabs value={selectedTab} onValueChange={(value) => setSelectedTab(value as 'draw' | 'saved')}>
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="draw" className="font-sans">
-                        <IconPencil className="mr-2 h-4 w-4" />
-                        Gambar Tanda Tangan
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1">
+                    <TabsTrigger value="draw" className="h-auto py-2.5 text-center font-sans leading-tight whitespace-normal">
+                        <IconPencil className="mr-2 hidden h-4 w-4 shrink-0 sm:inline" />
+                        <span>Gambar Tanda Tangan</span>
                     </TabsTrigger>
-                    <TabsTrigger value="saved" className="font-sans">
-                        <IconUpload className="mr-2 h-4 w-4" />
-                        Gunakan Tanda Tangan Tersimpan
+                    <TabsTrigger value="saved" className="h-auto py-2.5 text-center font-sans leading-tight whitespace-normal">
+                        <IconUpload className="mr-2 hidden h-4 w-4 shrink-0 sm:inline" />
+                        <span>Tanda Tangan Tersimpan</span>
                     </TabsTrigger>
                 </TabsList>
 
@@ -235,7 +235,7 @@ export default function SignaturePad({ onSignatureComplete, onCancel }: Signatur
                         </Card>
                     </div>
 
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         {onCancel && (
                             <Button type="button" variant="outline" onClick={onCancel} className="font-sans">
                                 Batal
@@ -302,7 +302,7 @@ export default function SignaturePad({ onSignatureComplete, onCancel }: Signatur
                         </div>
                     )}
 
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         {onCancel && (
                             <Button type="button" variant="outline" onClick={onCancel} className="font-sans">
                                 Batal

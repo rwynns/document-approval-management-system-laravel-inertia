@@ -34,6 +34,9 @@ class DokumenApproval extends Model
         'alasan_reject',
         'comment',
         'signature_path',
+        'revision_notes',
+        'revision_requested_by',
+        'revision_requested_at',
     ];
 
     /**
@@ -42,6 +45,7 @@ class DokumenApproval extends Model
     protected $casts = [
         'tgl_approve' => 'datetime',
         'tgl_deadline' => 'datetime',
+        'revision_requested_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -158,6 +162,47 @@ class DokumenApproval extends Model
     }
 
     /**
+     * Check if this approval can currently be approved.
+     * This validates that all previous steps are completed (approved/skipped).
+     */
+    public function canCurrentlyApprove(): bool
+    {
+        // Must be pending first
+        if (!$this->isPending()) {
+            return false;
+        }
+
+        // Get the step order of this approval
+        $currentStepOrder = $this->masterflowStep?->step_order ?? 0;
+
+        // If this is the first step, no previous steps to check
+        if ($currentStepOrder <= 1) {
+            return true;
+        }
+
+        // Get all approvals for this document with lower step order
+        $previousApprovals = self::where('dokumen_id', $this->dokumen_id)
+            ->whereHas('masterflowStep', function ($query) use ($currentStepOrder) {
+                $query->where('step_order', '<', $currentStepOrder);
+            })
+            ->get();
+
+        // If no previous approvals exist, this can be approved
+        if ($previousApprovals->isEmpty()) {
+            return true;
+        }
+
+        // Check if all previous approvals are completed (approved or skipped)
+        foreach ($previousApprovals as $previousApproval) {
+            if (!in_array($previousApproval->approval_status, ['approved', 'skipped'])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Approve this approval.
      */
     public function approve(string $comment = null): bool
@@ -180,6 +225,35 @@ class DokumenApproval extends Model
             'alasan_reject' => $reason,
             'comment' => $comment,
         ]);
+    }
+
+    /**
+     * Check if this approval has revision requested.
+     */
+    public function isRevisionRequested(): bool
+    {
+        return $this->approval_status === 'revision_requested';
+    }
+
+    /**
+     * Request revision for this approval.
+     */
+    public function requestRevision(string $notes, int $requestedBy): bool
+    {
+        return $this->update([
+            'approval_status' => 'revision_requested',
+            'revision_notes' => $notes,
+            'revision_requested_by' => $requestedBy,
+            'revision_requested_at' => now(),
+        ]);
+    }
+
+    /**
+     * Get the user who requested revision.
+     */
+    public function revisionRequester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'revision_requested_by');
     }
 
     /**

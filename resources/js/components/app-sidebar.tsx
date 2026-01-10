@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import * as React from 'react';
 
+import ContextSwitcher from '@/components/context-switcher';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
@@ -119,61 +120,47 @@ const userNavMain = [
     },
 ];
 
-// Removed navSecondary and documents arrays as they're not needed
+interface PageProps {
+    auth: {
+        user: {
+            name: string;
+            email: string;
+            avatar?: string;
+            user_auths?: Array<{ role?: { role_name: string } }>;
+            userAuths?: Array<{ role?: { role_name: string } }>;
+        } | null;
+    };
+    context: {
+        current: {
+            role?: { name: string };
+        } | null;
+        is_super_admin: boolean;
+    };
+    [key: string]: unknown;
+}
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-    const { props: pageProps } = usePage<any>();
+    const { props: pageProps } = usePage<PageProps>();
     const user = pageProps.auth?.user;
+    const context = pageProps.context;
 
-    // Debug: Log the entire user object
-    console.log('=== SIDEBAR DEBUG ===');
-    console.log('Full User Object:', user);
-    console.log('user_auths:', user?.user_auths);
-    console.log('==================');
+    // Use current context for role detection (context-aware)
+    const currentRole = context?.current?.role?.name?.toLowerCase() || '';
+    const isSuperAdmin = context?.is_super_admin || false;
 
-    // Determine menu items based on user role
+    // Determine menu items based on CURRENT CONTEXT role
     let navMainItems = userNavMain;
-    let sidebarTitle = 'Document Approval Management System';
-    let roleLabel = 'User';
+    let sidebarTitle = 'Document Approval';
 
-    // Check for user_auths (snake_case from Laravel)
-    const userAuths = user?.user_auths || user?.userAuths;
-
-    if (userAuths && userAuths.length > 0) {
-        const primaryRole = userAuths[0]?.role?.role_name;
-        const roleNameLower = primaryRole?.toLowerCase() || '';
-
-        // Debug logging
-        console.log('User Role Detection:', {
-            primaryRole,
-            roleNameLower,
-            userAuths: userAuths,
-        });
-
-        if (roleNameLower === 'super admin' || primaryRole === 'Super Admin') {
-            navMainItems = superAdminNavMain;
-            sidebarTitle = 'Super Admin Panel';
-            roleLabel = 'Super Admin';
-            console.log('✅ Super Admin menu selected');
-        } else if (roleNameLower === 'admin' || primaryRole === 'Admin') {
-            navMainItems = adminNavMain;
-            sidebarTitle = 'Admin Panel';
-            roleLabel = 'Admin';
-            console.log('✅ Admin menu selected, items:', adminNavMain);
-        } else if (roleNameLower === 'user' || primaryRole === 'User') {
-            navMainItems = userNavMain;
-            sidebarTitle = 'User Panel';
-            roleLabel = 'User';
-            console.log('✅ User menu selected');
-        } else {
-            navMainItems = superAdminNavMain;
-            sidebarTitle = 'Application';
-            roleLabel = primaryRole || 'User';
-            console.log('⚠️ Fallback to super admin menu for role:', primaryRole);
-        }
-    } else {
+    if (isSuperAdmin) {
         navMainItems = superAdminNavMain;
-        console.log('❌ No userAuths found, using super admin menu');
+        sidebarTitle = 'Super Admin Panel';
+    } else if (currentRole === 'admin') {
+        navMainItems = adminNavMain;
+        sidebarTitle = 'Admin Panel';
+    } else {
+        navMainItems = userNavMain;
+        sidebarTitle = 'User Panel';
     }
 
     const userData = {
@@ -195,6 +182,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>
+                {/* Context Switcher */}
+                <div className="mt-2">
+                    <ContextSwitcher />
+                </div>
             </SidebarHeader>
             <SidebarContent>
                 <NavMain items={navMainItems} />

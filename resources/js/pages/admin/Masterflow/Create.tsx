@@ -1,14 +1,16 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { IconArrowLeft, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconArrowLeft, IconBuilding, IconPlus, IconSettings, IconTrash } from '@tabler/icons-react';
 import { FormEvent, useState } from 'react';
 
+import { AppSidebar } from '@/components/app-sidebar';
+import { SiteHeader } from '@/components/site-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Textarea } from '@/components/ui/textarea';
-import AppLayout from '@/layouts/app-layout';
 import { showToast } from '@/lib/toast';
 
 interface Jabatan {
@@ -113,146 +115,176 @@ export default function Create({ jabatans, company }: Props) {
     };
 
     return (
-        <AppLayout>
+        <>
             <Head title="Tambah Masterflow" />
-
-            <div className="flex-1 space-y-4 p-4 pt-6 md:p-8">
-                <div className="flex items-center justify-between space-y-2">
-                    <div>
-                        <h2 className="text-3xl font-bold tracking-tight">Tambah Masterflow</h2>
-                        <p className="text-muted-foreground">Company: {company?.name || 'Unknown Company'}</p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <Link href={route('admin.masterflows.index')}>
-                            <Button variant="outline">
-                                <IconArrowLeft className="mr-2 h-4 w-4" />
-                                Kembali
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Informasi Masterflow</CardTitle>
-                            <CardDescription>Isi informasi dasar untuk masterflow baru.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="name">Nama Masterflow *</Label>
-                                <Input
-                                    id="name"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder="Contoh: Approval Surat Permohonan"
-                                />
-                                {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="description">Deskripsi</Label>
-                                <Textarea
-                                    id="description"
-                                    value={formData.description}
-                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                    placeholder="Deskripsi singkat tentang masterflow ini"
-                                    rows={3}
-                                />
-                                {errors.description && <p className="text-sm text-red-600">{errors.description}</p>}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <CardTitle>Langkah Approval</CardTitle>
-                                    <CardDescription>Definisikan urutan langkah approval yang diperlukan.</CardDescription>
+            <SidebarProvider>
+                <AppSidebar variant="inset" />
+                <SidebarInset>
+                    <SiteHeader />
+                    <div className="flex flex-1 flex-col">
+                        <div className="@container/main flex flex-1 flex-col gap-2 p-6">
+                            <div className="space-y-8">
+                                {/* Header Section */}
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-1">
+                                        <h1 className="flex items-center gap-2 font-serif text-2xl font-bold tracking-tight text-foreground">
+                                            <IconSettings className="h-6 w-6 text-primary" />
+                                            Tambah Masterflow
+                                        </h1>
+                                        <p className="flex items-center gap-2 font-sans text-sm text-muted-foreground">
+                                            <IconBuilding className="h-4 w-4" />
+                                            {company?.name || 'Unknown Company'}
+                                        </p>
+                                    </div>
+                                    <Link href={route('admin.masterflows.index')}>
+                                        <Button variant="outline" className="font-sans">
+                                            <IconArrowLeft className="mr-2 h-4 w-4" />
+                                            Kembali
+                                        </Button>
+                                    </Link>
                                 </div>
-                                <Button type="button" onClick={addStep} variant="outline" size="sm">
-                                    <IconPlus className="mr-2 h-4 w-4" />
-                                    Tambah Langkah
-                                </Button>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            {formData.steps.map((step, index) => (
-                                <div key={index} className="space-y-4 rounded-lg border p-4">
-                                    <div className="flex items-center justify-between">
-                                        <h4 className="font-semibold">Langkah {step.step_order}</h4>
-                                        {formData.steps.length > 1 && (
-                                            <Button type="button" variant="ghost" size="sm" onClick={() => removeStep(index)}>
-                                                <IconTrash className="h-4 w-4" />
+
+                                <form onSubmit={handleSubmit} className="space-y-6">
+                                    <Card className="border-border bg-card">
+                                        <CardHeader>
+                                            <CardTitle className="font-serif text-foreground">Informasi Masterflow</CardTitle>
+                                            <CardDescription className="font-sans">Isi informasi dasar untuk masterflow baru.</CardDescription>
+                                        </CardHeader>
+                                        <CardContent className="space-y-4">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="name" className="font-sans">
+                                                    Nama Masterflow *
+                                                </Label>
+                                                <Input
+                                                    id="name"
+                                                    value={formData.name}
+                                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                                    placeholder="Contoh: Approval Surat Permohonan"
+                                                    className="font-sans"
+                                                />
+                                                {errors.name && <p className="font-sans text-sm text-red-600">{errors.name}</p>}
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <Label htmlFor="description" className="font-sans">
+                                                    Deskripsi
+                                                </Label>
+                                                <Textarea
+                                                    id="description"
+                                                    value={formData.description}
+                                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                                    placeholder="Deskripsi singkat tentang masterflow ini"
+                                                    rows={3}
+                                                    className="font-sans"
+                                                />
+                                                {errors.description && <p className="font-sans text-sm text-red-600">{errors.description}</p>}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+
+                                    <Card className="border-border bg-card">
+                                        <CardHeader>
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <CardTitle className="font-serif text-foreground">Langkah Approval</CardTitle>
+                                                    <CardDescription className="font-sans">
+                                                        Definisikan urutan langkah approval yang diperlukan.
+                                                    </CardDescription>
+                                                </div>
+                                                <Button type="button" onClick={addStep} variant="outline" size="sm" className="font-sans">
+                                                    <IconPlus className="mr-2 h-4 w-4" />
+                                                    Tambah Langkah
+                                                </Button>
+                                            </div>
+                                        </CardHeader>
+                                        <CardContent className="space-y-4">
+                                            {formData.steps.map((step, index) => (
+                                                <div key={index} className="space-y-4 rounded-lg border border-border p-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <h4 className="font-sans font-semibold text-foreground">Langkah {step.step_order}</h4>
+                                                        {formData.steps.length > 1 && (
+                                                            <Button type="button" variant="ghost" size="sm" onClick={() => removeStep(index)}>
+                                                                <IconTrash className="h-4 w-4" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                                        <div className="space-y-2">
+                                                            <Label className="font-sans">Nama Langkah *</Label>
+                                                            <Input
+                                                                value={step.step_name}
+                                                                onChange={(e) => updateStep(index, 'step_name', e.target.value)}
+                                                                placeholder="Contoh: Review Manager"
+                                                                className="font-sans"
+                                                            />
+                                                            {errors[`steps.${index}.step_name`] && (
+                                                                <p className="font-sans text-sm text-red-600">{errors[`steps.${index}.step_name`]}</p>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="space-y-2">
+                                                            <Label className="font-sans">Jabatan yang Bertanggung Jawab *</Label>
+                                                            <Select
+                                                                value={step.jabatan_id.toString()}
+                                                                onValueChange={(value) => updateStep(index, 'jabatan_id', parseInt(value))}
+                                                            >
+                                                                <SelectTrigger className="font-sans">
+                                                                    <SelectValue placeholder="Pilih Jabatan" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {jabatans.map((jabatan) => (
+                                                                        <SelectItem
+                                                                            key={jabatan.id}
+                                                                            value={jabatan.id.toString()}
+                                                                            className="font-sans"
+                                                                        >
+                                                                            {jabatan.name}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                            {errors[`steps.${index}.jabatan_id`] && (
+                                                                <p className="font-sans text-sm text-red-600">
+                                                                    {errors[`steps.${index}.jabatan_id`]}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <Label className="font-sans">Deskripsi Langkah</Label>
+                                                        <Textarea
+                                                            value={step.description}
+                                                            onChange={(e) => updateStep(index, 'description', e.target.value)}
+                                                            placeholder="Deskripsi tentang apa yang dilakukan pada langkah ini"
+                                                            rows={2}
+                                                            className="font-sans"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+
+                                            {errors.steps && <p className="font-sans text-sm text-red-600">{errors.steps}</p>}
+                                        </CardContent>
+                                    </Card>
+
+                                    <div className="flex items-center justify-end space-x-2">
+                                        <Link href={route('admin.masterflows.index')}>
+                                            <Button type="button" variant="outline" className="font-sans">
+                                                Batal
                                             </Button>
-                                        )}
+                                        </Link>
+                                        <Button type="submit" disabled={processing} className="font-sans">
+                                            {processing ? 'Menyimpan...' : 'Simpan Masterflow'}
+                                        </Button>
                                     </div>
-
-                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                        <div className="space-y-2">
-                                            <Label>Nama Langkah *</Label>
-                                            <Input
-                                                value={step.step_name}
-                                                onChange={(e) => updateStep(index, 'step_name', e.target.value)}
-                                                placeholder="Contoh: Review Manager"
-                                            />
-                                            {errors[`steps.${index}.step_name`] && (
-                                                <p className="text-sm text-red-600">{errors[`steps.${index}.step_name`]}</p>
-                                            )}
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <Label>Jabatan yang Bertanggung Jawab *</Label>
-                                            <Select
-                                                value={step.jabatan_id.toString()}
-                                                onValueChange={(value) => updateStep(index, 'jabatan_id', parseInt(value))}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Pilih Jabatan" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {jabatans.map((jabatan) => (
-                                                        <SelectItem key={jabatan.id} value={jabatan.id.toString()}>
-                                                            {jabatan.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            {errors[`steps.${index}.jabatan_id`] && (
-                                                <p className="text-sm text-red-600">{errors[`steps.${index}.jabatan_id`]}</p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label>Deskripsi Langkah</Label>
-                                        <Textarea
-                                            value={step.description}
-                                            onChange={(e) => updateStep(index, 'description', e.target.value)}
-                                            placeholder="Deskripsi tentang apa yang dilakukan pada langkah ini"
-                                            rows={2}
-                                        />
-                                    </div>
-                                </div>
-                            ))}
-
-                            {errors.steps && <p className="text-sm text-red-600">{errors.steps}</p>}
-                        </CardContent>
-                    </Card>
-
-                    <div className="flex items-center justify-end space-x-2">
-                        <Link href={route('admin.masterflows.index')}>
-                            <Button type="button" variant="outline">
-                                Batal
-                            </Button>
-                        </Link>
-                        <Button type="submit" disabled={processing}>
-                            {processing ? 'Menyimpan...' : 'Simpan Masterflow'}
-                        </Button>
+                                </form>
+                            </div>
+                        </div>
                     </div>
-                </form>
-            </div>
-        </AppLayout>
+                </SidebarInset>
+            </SidebarProvider>
+        </>
     );
 }

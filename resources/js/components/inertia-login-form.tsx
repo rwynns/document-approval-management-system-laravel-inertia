@@ -4,8 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { Link, useForm } from '@inertiajs/react';
+import axios from 'axios';
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface InertiaLoginFormProps {
     canResetPassword: boolean;
@@ -19,6 +20,13 @@ export function InertiaLoginForm({ canResetPassword }: InertiaLoginFormProps) {
         password: '',
         remember: false,
     });
+
+    // Get CSRF cookie when component mounts
+    useEffect(() => {
+        axios.get('/sanctum/csrf-cookie').catch((err) => {
+            console.error('Failed to get CSRF cookie:', err);
+        });
+    }, []);
 
     const submit = (e: React.FormEvent) => {
         e.preventDefault();

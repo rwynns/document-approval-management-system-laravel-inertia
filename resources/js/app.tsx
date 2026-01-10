@@ -1,12 +1,26 @@
 import '../css/app.css';
 
 import { createInertiaApp, router } from '@inertiajs/react';
+import axios from 'axios';
 import Echo from 'laravel-echo';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import Pusher from 'pusher-js';
 import { createRoot } from 'react-dom/client';
 import { Toaster } from 'react-hot-toast';
 import { initializeTheme } from './hooks/use-appearance';
+
+// Extend Window interface for Pusher and Echo
+declare global {
+    interface Window {
+        Pusher: typeof Pusher;
+        Echo: Echo<any>;
+    }
+}
+
+// Configure Axios for CSRF protection
+axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+axios.defaults.withCredentials = true;
+axios.defaults.baseURL = window.location.origin;
 
 // Bootstrap Laravel Echo untuk Reverb (Pusher)
 window.Pusher = Pusher;
@@ -33,8 +47,41 @@ console.log('📡 Laravel Echo initialized with Reverb:', {
     forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
 });
 
+// Helper function to get CSRF token from cookie or meta tag
+function getCsrfToken(): string | null {
+    // First try to get from meta tag
+    const metaTag = document.querySelector('meta[name="csrf-token"]');
+    if (metaTag) {
+        const token = metaTag.getAttribute('content');
+        if (token) return token;
+    }
+
+    // Then try from XSRF-TOKEN cookie (set by Sanctum)
+    const matches = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+    if (matches && matches[1]) {
+        return decodeURIComponent(matches[1]);
+    }
+
+    return null;
+}
+
 // Add Socket ID to all Inertia requests for broadcasting exclusion (toOthers)
 router.on('before', (event) => {
+    // Add CSRF token to all Inertia requests
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+        event.detail.visit.headers = {
+            ...event.detail.visit.headers,
+            'X-CSRF-TOKEN': csrfToken,
+            'X-XSRF-TOKEN': csrfToken,
+        };
+        console.log('🔒 Adding CSRF token to Inertia request:', csrfToken.substring(0, 20) + '...');
+        console.log('📋 Request headers:', event.detail.visit.headers);
+    } else {
+        console.warn('⚠️ No CSRF token found!');
+    }
+
+    // Add Socket ID for broadcasting
     if (window.Echo) {
         const socketId = window.Echo.socketId();
         if (socketId) {
