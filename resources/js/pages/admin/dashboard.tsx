@@ -66,14 +66,16 @@ export default function AdminDashboard({ stats, recent_documents, recent_activit
     const getStatusBadge = (status: string) => {
         const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
             draft: { variant: 'secondary', label: 'Draft' },
-            pending: { variant: 'outline', label: 'Pending' },
-            in_review: { variant: 'default', label: 'In Review' },
-            approved: { variant: 'default', label: 'Approved' },
-            rejected: { variant: 'destructive', label: 'Rejected' },
-            revision_requested: { variant: 'outline', label: 'Revision' },
+            pending: { variant: 'outline', label: 'Menunggu' },
+            under_review: { variant: 'default', label: 'Sedang Direview' },
+            in_review: { variant: 'default', label: 'Dalam Review' },
+            approved: { variant: 'default', label: 'Disetujui' },
+            rejected: { variant: 'destructive', label: 'Ditolak' },
+            revision_requested: { variant: 'outline', label: 'Revisi Diminta' },
+            completed: { variant: 'default', label: 'Selesai' },
         };
 
-        const config = statusConfig[status] || { variant: 'secondary', label: status };
+        const config = statusConfig[status] || { variant: 'secondary', label: status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()) };
         return <Badge variant={config.variant}>{config.label}</Badge>;
     };
 
