@@ -47,19 +47,19 @@ console.log('📡 Laravel Echo initialized with Reverb:', {
     forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
 });
 
-// Helper function to get CSRF token from cookie or meta tag
-function getCsrfToken(): string | null {
-    // First try to get from meta tag
+// Helper function to get CSRF token and its type
+function getCsrfTokenInfo(): { token: string; type: 'raw' | 'encrypted' } | null {
+    // PRIORITIZE Cookie "XSRF-TOKEN" (Encrypted) because it's always fresher than meta tag in SPA
+    const matches = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+    if (matches && matches[1]) {
+        return { token: decodeURIComponent(matches[1]), type: 'encrypted' };
+    }
+
+    // Fallback to meta tag (RAW token)
     const metaTag = document.querySelector('meta[name="csrf-token"]');
     if (metaTag) {
         const token = metaTag.getAttribute('content');
-        if (token) return token;
-    }
-
-    // Then try from XSRF-TOKEN cookie (set by Sanctum)
-    const matches = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
-    if (matches && matches[1]) {
-        return decodeURIComponent(matches[1]);
+        if (token) return { token, type: 'raw' };
     }
 
     return null;
@@ -68,15 +68,37 @@ function getCsrfToken(): string | null {
 // Add Socket ID to all Inertia requests for broadcasting exclusion (toOthers)
 router.on('before', (event) => {
     // Add CSRF token to all Inertia requests
-    const csrfToken = getCsrfToken();
-    if (csrfToken) {
-        event.detail.visit.headers = {
-            ...event.detail.visit.headers,
-            'X-CSRF-TOKEN': csrfToken,
-            'X-XSRF-TOKEN': csrfToken,
-        };
-        console.log('🔒 Adding CSRF token to Inertia request:', csrfToken.substring(0, 20) + '...');
-        console.log('📋 Request headers:', event.detail.visit.headers);
+    const csrfInfo = getCsrfTokenInfo();
+
+    if (csrfInfo) {
+        const headers = { ...event.detail.visit.headers };
+
+        // If we have raw token, use X-CSRF-TOKEN
+        if (csrfInfo.type === 'raw') {
+            headers['X-CSRF-TOKEN'] = csrfInfo.token;
+        }
+
+        // Always try to set X-XSRF-TOKEN if we have an encrypted one (from cookie)
+        // If getCsrfTokenInfo returned raw, we might check cookie specifically for XSRF header
+        // But simpler logic: If we have encrypted from cookie, use X-XSRF-TOKEN.
+        // If getCsrfTokenInfo returned encrypted, we MUST use X-XSRF-TOKEN and NOT X-CSRF-TOKEN.
+
+        if (csrfInfo.type === 'encrypted') {
+            headers['X-XSRF-TOKEN'] = csrfInfo.token;
+            // IMPORTANT: Do NOT set X-CSRF-TOKEN with encrypted value
+        } else {
+            // If raw, we can also set X-XSRF-TOKEN if we want, but X-CSRF-TOKEN is enough.
+            // Usually Axios does this automatically for X-XSRF-TOKEN from cookie?
+            // Let's explicitly check cookie for X-XSRF-TOKEN even if we found raw meta
+            const cookieMatch = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+            if (cookieMatch && cookieMatch[1]) {
+                headers['X-XSRF-TOKEN'] = decodeURIComponent(cookieMatch[1]);
+            }
+        }
+
+        event.detail.visit.headers = headers;
+
+        console.log(`🔒 Adding CSRF token (${csrfInfo.type}) to Inertia request`);
     } else {
         console.warn('⚠️ No CSRF token found!');
     }

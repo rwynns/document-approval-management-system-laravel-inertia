@@ -146,28 +146,28 @@ class DokumenApprovalController extends Controller
             'signature_position' => 'nullable|string|in:bottom_right,bottom_left,bottom_center',
         ]);
 
+        // Handle signature storage (moved outside transaction)
+        $signaturePath = null;
+        $signatureData = $validated['signature'];
+
+        if (str_starts_with($signatureData, 'data:image')) {
+            // New manual signature - decode and save
+            $image = str_replace('data:image/png;base64,', '', $signatureData);
+            $image = str_replace(' ', '+', $image);
+            $imageData = base64_decode($image);
+
+            $filename = 'approval_signature_' . time() . '_' . \Illuminate\Support\Str::random(10) . '.png';
+            $path = 'signatures/approvals/' . $approval->id . '/' . $filename;
+
+            \Illuminate\Support\Facades\Storage::disk('public')->put($path, $imageData);
+            $signaturePath = $path;
+        } elseif (str_starts_with($signatureData, 'http') || str_starts_with($signatureData, '/storage')) {
+            // Existing signature URL - extract path
+            $signaturePath = str_replace('/storage/', '', parse_url($signatureData, PHP_URL_PATH));
+        }
+
         DB::beginTransaction();
         try {
-            // Handle signature storage
-            $signaturePath = null;
-            $signatureData = $validated['signature'];
-
-            if (str_starts_with($signatureData, 'data:image')) {
-                // New manual signature - decode and save
-                $image = str_replace('data:image/png;base64,', '', $signatureData);
-                $image = str_replace(' ', '+', $image);
-                $imageData = base64_decode($image);
-
-                $filename = 'approval_signature_' . time() . '_' . \Illuminate\Support\Str::random(10) . '.png';
-                $path = 'signatures/approvals/' . $approval->id . '/' . $filename;
-
-                \Illuminate\Support\Facades\Storage::disk('public')->put($path, $imageData);
-                $signaturePath = $path;
-            } elseif (str_starts_with($signatureData, 'http') || str_starts_with($signatureData, '/storage')) {
-                // Existing signature URL - extract path
-                $signaturePath = str_replace('/storage/', '', parse_url($signatureData, PHP_URL_PATH));
-            }
-
             // Approve this approval with signature
             $approval->update([
                 'approval_status' => 'approved',
@@ -176,6 +176,39 @@ class DokumenApprovalController extends Controller
                 'signature_path' => $signaturePath,
             ]);
 
+            // Add comment if provided
+            if ($validated['comment']) {
+                \App\Models\Comment::create([
+                    'dokumen_id' => $approval->dokumen_id,
+                    'content' => 'Approved: ' . $validated['comment'],
+                    'user_id' => Auth::id(),
+                    'created_at_custom' => now(),
+                ]);
+            }
+
+            // Check if all approvals are complete and handle group logic
+            Log::info('Checking document status after approval', [
+                'dokumen_id' => $approval->dokumen_id,
+                'approval_id' => $approval->id,
+                'group_index' => $approval->group_index,
+                'jenis_group' => $approval->jenis_group,
+            ]);
+
+            $this->checkAndUpdateDocumentStatus($approval->dokumen);
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error('Approval failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'approval_id' => $approval->id,
+            ]);
+            return back()->withErrors(['error' => 'Gagal melakukan approval: ' . $e->getMessage()]);
+        }
+
+        // Post-processing outside transaction to avoid blocking DB connections
+        try {
             // Add signature to PDF document
             Log::info('Checking if signature should be embedded', [
                 'signature_path' => $signaturePath,
@@ -240,26 +273,6 @@ class DokumenApprovalController extends Controller
                 }
             }
 
-            // Add comment if provided
-            if ($validated['comment']) {
-                \App\Models\Comment::create([
-                    'dokumen_id' => $approval->dokumen_id,
-                    'content' => 'Approved: ' . $validated['comment'],
-                    'user_id' => Auth::id(),
-                    'created_at_custom' => now(),
-                ]);
-            }
-
-            // Check if all approvals are complete and handle group logic
-            Log::info('Checking document status after approval', [
-                'dokumen_id' => $approval->dokumen_id,
-                'approval_id' => $approval->id,
-                'group_index' => $approval->group_index,
-                'jenis_group' => $approval->jenis_group,
-            ]);
-
-            $this->checkAndUpdateDocumentStatus($approval->dokumen);
-
             // Broadcast dokumen updated event for real-time updates (minimal payload)
             $dokumen = $approval->dokumen->fresh();
 
@@ -280,19 +293,17 @@ class DokumenApprovalController extends Controller
             ]);
             broadcast(new UserDokumenUpdated($dokumen))->toOthers();
 
-            DB::commit();
-
-            return redirect()->route('approvals.index')
-                ->with('success', 'Dokumen berhasil di-approve dan ditandatangani!');
         } catch (\Exception $e) {
-            DB::rollback();
-            Log::error('Approval failed', [
+            // Log post-processing errors but don't fail the request as the approval is already committed
+            Log::error('Post-approval processing failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'approval_id' => $approval->id,
             ]);
-            return back()->withErrors(['error' => 'Gagal melakukan approval: ' . $e->getMessage()]);
         }
+
+        return redirect()->route('approvals.index')
+            ->with('success', 'Dokumen berhasil di-approve dan ditandatangani!');
     }
 
     /**

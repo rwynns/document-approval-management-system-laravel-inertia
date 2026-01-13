@@ -17,7 +17,6 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
-
         // Use custom CSRF verification middleware
         $middleware->validateCsrfTokens(except: [
             // Exempt these routes from CSRF verification
@@ -43,8 +42,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // Handle 419 Page Expired (CSRF token mismatch)
             if ($response->getStatusCode() === 419) {
                 // For Inertia requests, return a proper Inertia response
+                // Force a hard visit to login page to refresh CSRF token
                 if ($request->header('X-Inertia')) {
-                    return \Inertia\Inertia::location(url()->previous() ?: '/');
+                    return \Inertia\Inertia::location(route('login'));
                 }
 
                 // For API requests, return JSON
@@ -57,8 +57,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
                 // For regular web requests, redirect back
                 return redirect()
-                    ->back()
-                    ->withErrors(['session' => 'Session telah kadaluarsa. Silakan coba lagi.']);
+                    ->route('login')
+                    ->withErrors(['email' => 'Session expired. Please login again.']);
             }
 
             return $response;
