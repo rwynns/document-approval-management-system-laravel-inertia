@@ -131,6 +131,95 @@ npm run build
 
 ---
 
+## ▶️ Running the Application
+
+After completing the installation steps, you need to run multiple services to get the application fully functional.
+
+### Development Environment
+
+You'll need to run these commands in **separate terminal windows/tabs**:
+
+#### 1. Start the Laravel Development Server
+
+```bash
+php artisan serve
+```
+
+This will start the application at `http://localhost:8000` (or the port specified in your `.env`).
+
+#### 2. Start the Frontend Build Process
+
+In a new terminal:
+
+```bash
+npm run dev
+```
+
+This starts Vite's development server for hot module replacement (HMR).
+
+#### 3. Start Laravel Reverb (WebSocket Server)
+
+In a new terminal:
+
+```bash
+php artisan reverb:start
+```
+
+This enables real-time notifications and live updates.
+
+#### 4. Start the Queue Worker
+
+In a new terminal:
+
+```bash
+php artisan queue:work
+```
+
+This processes background jobs like sending emails and notifications.
+
+### Quick Start Script (Optional)
+
+For convenience, you can create a start script. Create a file `start-dev.sh` (Linux/Mac) or `start-dev.bat` (Windows):
+
+**Windows (`start-dev.bat`):**
+
+```batch
+@echo off
+start cmd /k "php artisan serve"
+start cmd /k "npm run dev"
+start cmd /k "php artisan reverb:start"
+start cmd /k "php artisan queue:work"
+```
+
+**Linux/Mac (`start-dev.sh`):**
+
+```bash
+#!/bin/bash
+gnome-terminal --tab -- bash -c "php artisan serve; exec bash"
+gnome-terminal --tab -- bash -c "npm run dev; exec bash"
+gnome-terminal --tab -- bash -c "php artisan reverb:start; exec bash"
+gnome-terminal --tab -- bash -c "php artisan queue:work; exec bash"
+```
+
+### Production Environment
+
+For production, use a process manager like **Supervisor** to keep services running:
+
+1. **Web Server**: Configure Nginx/Apache to serve from the `public` directory
+2. **Queue Worker**: Run via Supervisor
+3. **Reverb**: Run via Supervisor or use a service like Pusher/Ably
+4. **Scheduler**: Add to cron: `* * * * * php /path/to/artisan schedule:run >> /dev/null 2>&1`
+
+### Accessing the Application
+
+Once all services are running:
+
+- **Application URL**: `http://localhost:8000`
+- **Login**: Use any of the seeded accounts (see User Accounts section)
+- **Default Password**: `password123`
+
+---
+
 ## 👥 User Accounts (Seeder Generated)
 
 After running `php artisan db:seed --class=UserJabatanSeeder`, the following accounts are available for testing and handover.
@@ -165,7 +254,13 @@ After running `php artisan db:seed --class=UserJabatanSeeder`, the following acc
 - **Context Switching**: Users can switch between different organizational contexts if assigned to multiple.
 - **PDF Generation & Viewer**: Integrated PDF handling for document previews and finalization.
 
-## 🚢 Deployment Notes
+## � Documentation
+
+For detailed technical documentation on specific features:
+
+- **[Digital Signature Configuration Guide](docs/SIGNATURE_CONFIGURATION.md)** - Comprehensive guide on configuring signature positions, multiple signatures, and troubleshooting signature-related issues.
+
+## �🚢 Deployment Notes
 
 When deploying to production:
 
