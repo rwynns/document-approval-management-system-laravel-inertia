@@ -259,6 +259,7 @@ After running `php artisan db:seed --class=UserJabatanSeeder`, the following acc
 For detailed technical documentation on specific features:
 
 - **[Digital Signature Configuration Guide](docs/SIGNATURE_CONFIGURATION.md)** - Comprehensive guide on configuring signature positions, multiple signatures, and troubleshooting signature-related issues.
+- **[API Documentation](API_DOCUMENTATION.md)** - Reference for all API endpoints, including authentication, document management, and approval workflows.
 
 ## �🚢 Deployment Notes
 

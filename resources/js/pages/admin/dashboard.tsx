@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Head, Link } from '@inertiajs/react';
-import { IconFileText, IconSparkles, IconUsers } from '@tabler/icons-react';
+import { IconCheck, IconClock, IconFileText, IconSparkles, IconUsers, IconX } from '@tabler/icons-react';
 import { Activity, CheckCircle2, Clock, FileText, XCircle } from 'lucide-react';
 
 interface Stats {
@@ -64,19 +64,62 @@ export default function AdminDashboard({ stats, recent_documents, recent_activit
     };
 
     const getStatusBadge = (status: string) => {
-        const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
-            draft: { variant: 'secondary', label: 'Draft' },
-            pending: { variant: 'outline', label: 'Menunggu' },
-            under_review: { variant: 'default', label: 'Sedang Direview' },
-            in_review: { variant: 'default', label: 'Dalam Review' },
-            approved: { variant: 'default', label: 'Disetujui' },
-            rejected: { variant: 'destructive', label: 'Ditolak' },
-            revision_requested: { variant: 'outline', label: 'Revisi Diminta' },
-            completed: { variant: 'default', label: 'Selesai' },
+        const config: Record<string, { label: string; className: string; icon: any }> = {
+            draft: {
+                label: 'Draft',
+                className: 'bg-gray-100 text-gray-800 border-gray-300',
+                icon: IconFileText,
+            },
+            pending: {
+                label: 'Menunggu',
+                className: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                icon: IconClock,
+            },
+            under_review: {
+                label: 'Sedang Direview',
+                className: 'bg-blue-100 text-blue-800 border-blue-300',
+                icon: IconClock,
+            },
+            in_review: {
+                label: 'Dalam Review',
+                className: 'bg-blue-100 text-blue-800 border-blue-300',
+                icon: IconClock,
+            },
+            approved: {
+                label: 'Disetujui',
+                className: 'bg-green-100 text-green-800 border-green-300',
+                icon: IconCheck,
+            },
+            rejected: {
+                label: 'Ditolak',
+                className: 'bg-red-100 text-red-800 border-red-300',
+                icon: IconX,
+            },
+            revision_requested: {
+                label: 'Revisi Diminta',
+                className: 'bg-orange-100 text-orange-800 border-orange-300',
+                icon: IconClock,
+            },
+            completed: {
+                label: 'Selesai',
+                className: 'bg-green-100 text-green-800 border-green-300',
+                icon: IconCheck,
+            },
         };
 
-        const config = statusConfig[status] || { variant: 'secondary', label: status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()) };
-        return <Badge variant={config.variant}>{config.label}</Badge>;
+        const defaultConfig = {
+            label: status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+            className: 'bg-gray-100 text-gray-800 border-gray-300',
+            icon: IconFileText,
+        };
+        const { label, className, icon: Icon } = config[status] || defaultConfig;
+
+        return (
+            <Badge variant="outline" className={`font-sans ${className}`}>
+                <Icon className="mr-1 h-3 w-3" />
+                {label}
+            </Badge>
+        );
     };
 
     return (
