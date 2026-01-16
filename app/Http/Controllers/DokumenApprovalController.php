@@ -9,6 +9,7 @@ use App\Services\PdfSignatureService;
 use App\Services\ApprovalGroupValidator;
 use App\Events\DokumenUpdated;
 use App\Events\UserDokumenUpdated;
+use App\Events\BrowserNotificationEvent;
 use App\Mail\DocumentRejectedMail;
 use App\Mail\RevisionRequestedMail;
 use App\Mail\DocumentFullyApprovedMail;
@@ -292,7 +293,6 @@ class DokumenApprovalController extends Controller
                 'event' => 'dokumen.updated'
             ]);
             broadcast(new UserDokumenUpdated($dokumen))->toOthers();
-
         } catch (\Exception $e) {
             // Log post-processing errors but don't fail the request as the approval is already committed
             Log::error('Post-approval processing failed', [
@@ -391,6 +391,15 @@ class DokumenApprovalController extends Controller
                 'action' => RevisionLog::ACTION_REJECTED,
                 'notes' => $validated['alasan_reject'],
             ]);
+
+            // Broadcast browser notification to document owner
+            broadcast(new BrowserNotificationEvent(
+                userId: $dokumenWithUser->user_id,
+                title: 'Dokumen Ditolak',
+                body: "Dokumen '{$dokumenWithUser->judul_dokumen}' telah ditolak. Alasan: " . \Illuminate\Support\Str::limit($validated['alasan_reject'], 50),
+                url: route('dokumen.show', $dokumenWithUser->id),
+                type: 'error'
+            ));
 
             DB::commit();
 
@@ -710,6 +719,15 @@ class DokumenApprovalController extends Controller
 
             broadcast(new DokumenUpdated($dokumenForBroadcast))->toOthers();
             broadcast(new UserDokumenUpdated($dokumenForBroadcast))->toOthers();
+
+            // Broadcast browser notification to document owner
+            broadcast(new BrowserNotificationEvent(
+                userId: $dokumen->user_id,
+                title: 'Revisi Dokumen Diminta',
+                body: "Dokumen '{$dokumen->judul_dokumen}' membutuhkan revisi. Catatan: " . \Illuminate\Support\Str::limit($validated['revision_notes'], 50),
+                url: route('dokumen.show', $dokumen->id),
+                type: 'warning'
+            ));
 
             DB::commit();
 

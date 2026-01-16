@@ -259,6 +259,7 @@ After running `php artisan db:seed --class=UserJabatanSeeder`, the following acc
 For detailed technical documentation on specific features:
 
 - **[Email Notification Guide](docs/FITUR_EMAIL_NOTIFICATION.md)** - Complete guide on email notification setup, Gmail SMTP configuration, all email types, and troubleshooting.
+- **[Browser Notification Guide](docs/FITUR_BROWSER_NOTIFICATION.md)** - Real-time browser notification setup, permission handling, and WebSocket configuration.
 - **[Digital Signature Configuration Guide](docs/SIGNATURE_CONFIGURATION.md)** - Comprehensive guide on configuring signature positions, multiple signatures, and troubleshooting signature-related issues.
 - **[QR Code Document Tracking](docs/FITUR_QR_CODE_DOKUMEN.md)** - Documentation for QR code feature for document verification and tracking.
 - **[API Documentation](API_DOCUMENTATION.md)** - Reference for all API endpoints, including authentication, document management, and approval workflows.

@@ -9,6 +9,7 @@ use App\Models\Masterflow;
 use App\Models\Comment;
 use App\Models\RevisionLog;
 use App\Events\ApprovalCreated;
+use App\Events\BrowserNotificationEvent;
 use App\Jobs\SendApprovalNotification;
 use App\Mail\ApprovalRequestMail;
 use Illuminate\Http\Request;
@@ -317,6 +318,15 @@ class DokumenController extends Controller
 
                                 // Dispatch email notification job
                                 SendApprovalNotification::dispatch($approval);
+
+                                // Broadcast browser notification to approver
+                                broadcast(new BrowserNotificationEvent(
+                                    userId: $userId,
+                                    title: 'Dokumen Baru Membutuhkan Persetujuan',
+                                    body: "Dokumen '{$dokumen->judul_dokumen}' membutuhkan persetujuan Anda.",
+                                    url: route('approvals.show', $approval->id),
+                                    type: 'info'
+                                ));
                             }
                         } else {
                             // Single approver selected by user
@@ -345,6 +355,15 @@ class DokumenController extends Controller
 
                                 // Dispatch email notification job
                                 SendApprovalNotification::dispatch($approval);
+
+                                // Broadcast browser notification to approver
+                                broadcast(new BrowserNotificationEvent(
+                                    userId: $validated['approvers'][$step->id],
+                                    title: 'Dokumen Baru Membutuhkan Persetujuan',
+                                    body: "Dokumen '{$dokumen->judul_dokumen}' membutuhkan persetujuan Anda.",
+                                    url: route('approvals.show', $approval->id),
+                                    type: 'info'
+                                ));
                             }
                         }
                     }
@@ -705,6 +724,15 @@ class DokumenController extends Controller
 
                     // Dispatch email notification for the reset approval
                     SendApprovalNotification::dispatch($revisionApproval->fresh());
+
+                    // Broadcast browser notification to approver
+                    broadcast(new BrowserNotificationEvent(
+                        userId: $revisionApproval->user_id,
+                        title: 'Dokumen Telah Direvisi',
+                        body: "Dokumen '{$dokumen->judul_dokumen}' telah direvisi dan membutuhkan persetujuan Anda.",
+                        url: route('approvals.show', $revisionApproval->id),
+                        type: 'info'
+                    ));
                 }
 
                 // Update all other pending approvals to use new version
@@ -748,6 +776,15 @@ class DokumenController extends Controller
 
                             // Dispatch email notification for each reset approval
                             SendApprovalNotification::dispatch($approval->fresh());
+
+                            // Broadcast browser notification to approver
+                            broadcast(new BrowserNotificationEvent(
+                                userId: $approval->user_id,
+                                title: 'Dokumen Telah Direvisi',
+                                body: "Dokumen '{$dokumen->judul_dokumen}' telah direvisi dan membutuhkan persetujuan Anda.",
+                                url: route('approvals.show', $approval->id),
+                                type: 'info'
+                            ));
                         } else {
                             // Update the version_id for already approved steps but keep their status
                             $approval->update([
@@ -778,6 +815,15 @@ class DokumenController extends Controller
                             'revision_requested_at' => null,
                         ]);
                         SendApprovalNotification::dispatch($approval->fresh());
+
+                        // Broadcast browser notification to approver
+                        broadcast(new BrowserNotificationEvent(
+                            userId: $approval->user_id,
+                            title: 'Dokumen Telah Direvisi',
+                            body: "Dokumen '{$dokumen->judul_dokumen}' telah direvisi dan membutuhkan persetujuan Anda.",
+                            url: route('approvals.show', $approval->id),
+                            type: 'info'
+                        ));
                     }
 
                     $dokumen->update([

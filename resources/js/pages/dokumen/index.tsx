@@ -1,4 +1,5 @@
 import { AppSidebar } from '@/components/app-sidebar';
+import { NotificationListener } from '@/components/NotificationListener';
 import { SiteHeader } from '@/components/site-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -857,6 +858,7 @@ export default function UserDokumen() {
         <>
             <Head title="My Documents" />
             <SidebarProvider>
+                <NotificationListener userId={auth.user?.id} />
                 <AppSidebar variant="inset" />
                 <SidebarInset>
                     <SiteHeader />

@@ -21,6 +21,11 @@ Broadcast::channel('role-management', function () {
     return true; // Public channel
 });
 
+// Channel for browser notifications (public, per-user)
+Broadcast::channel('user.{userId}.notifications', function () {
+    return true; // Public channel - anyone can listen
+});
+
 // Private channel example (if needed)
 // Broadcast::channel('role-management-private', function ($user) {
 //     return $user->role === 'admin'; // Only admins can listen
