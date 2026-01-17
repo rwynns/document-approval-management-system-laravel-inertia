@@ -1,4 +1,5 @@
 import { AppSidebar } from '@/components/app-sidebar';
+import { NotificationListener } from '@/components/NotificationListener';
 import PDFViewer from '@/components/pdf-viewer';
 import SignaturePad from '@/components/signature-pad';
 import { SiteHeader } from '@/components/site-header';
@@ -418,6 +419,7 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
         <>
             <Head title={`Approval - ${approval.dokumen.judul_dokumen}`} />
             <SidebarProvider>
+                <NotificationListener />
                 <AppSidebar variant="inset" />
                 <SidebarInset>
                     <SiteHeader />

@@ -78,12 +78,29 @@ class DokumenApprovalController extends Controller
 
         $approvals = $query->paginate(15)->withQueryString();
 
-        // Get statistics
+        // Get statistics - with context filter applied
+        $statsBaseQuery = DokumenApproval::byUser(Auth::id());
+
+        // Apply the same context filtering to stats
+        if (!$this->contextService->isSuperAdmin()) {
+            $companyId = $this->contextService->getCurrentCompanyId();
+            $aplikasiId = $this->contextService->getCurrentAplikasiId();
+
+            $statsBaseQuery->whereHas('dokumen', function ($q) use ($companyId, $aplikasiId) {
+                if ($companyId) {
+                    $q->where('company_id', $companyId);
+                }
+                if ($aplikasiId) {
+                    $q->where('aplikasi_id', $aplikasiId);
+                }
+            });
+        }
+
         $stats = [
-            'pending' => DokumenApproval::byUser(Auth::id())->pending()->count(),
-            'approved' => DokumenApproval::byUser(Auth::id())->approved()->count(),
-            'rejected' => DokumenApproval::byUser(Auth::id())->rejected()->count(),
-            'overdue' => DokumenApproval::byUser(Auth::id())->overdue()->count(),
+            'pending' => (clone $statsBaseQuery)->pending()->count(),
+            'approved' => (clone $statsBaseQuery)->approved()->count(),
+            'rejected' => (clone $statsBaseQuery)->rejected()->count(),
+            'overdue' => (clone $statsBaseQuery)->overdue()->count(),
         ];
 
         return Inertia::render('approvals/index', [

@@ -38,6 +38,7 @@ Fitur browser notification memungkinkan pengguna menerima notifikasi real-time l
 | `routes/channels.php`                     | Definisi channel `user.{userId}.notifications`              |
 | `DokumenController.php`                   | Dispatch notifikasi saat `store()` dan `uploadRevision()`   |
 | `DokumenApprovalController.php`           | Dispatch notifikasi saat `reject()` dan `requestRevision()` |
+| `app/Mail/RevisionUploadedMail.php`       | Email notifikasi saat revisi diupload untuk grup approval   |
 
 ### Frontend
 
@@ -71,6 +72,12 @@ Fitur browser notification memungkinkan pengguna menerima notifikasi real-time l
 - **Trigger**: Approver request revision
 - **Penerima**: Owner dokumen
 - **Type**: `warning` (kuning)
+
+### 5. Revisi Dokumen Telah Diupload
+
+- **Trigger**: Owner upload revisi dokumen untuk grup approval
+- **Penerima**: Semua approver dalam grup yang approval-nya di-reset
+- **Type**: `info` (biru)
 
 ## Konfigurasi
 

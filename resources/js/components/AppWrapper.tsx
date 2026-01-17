@@ -8,12 +8,13 @@ interface AppWrapperProps {
 /**
  * AppWrapper component that wraps the entire application
  * and provides global functionality like notification listening.
+ * NotificationListener is rendered AFTER children to ensure Inertia context is available.
  */
 export function AppWrapper({ children }: AppWrapperProps) {
     return (
         <>
-            <NotificationListener />
             {children}
+            <NotificationListener />
         </>
     );
 }

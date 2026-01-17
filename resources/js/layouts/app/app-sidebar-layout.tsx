@@ -11,7 +11,7 @@ export default function AppSidebarLayout({ children, breadcrumbs = [] }: PropsWi
 
     return (
         <SidebarProvider>
-            <NotificationListener userId={auth?.user?.id} />
+            <NotificationListener />
             <AppSidebar />
             <SidebarInset>
                 <header className="flex h-16 shrink-0 items-center gap-4 border-b border-border bg-background px-4 shadow-sm">

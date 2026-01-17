@@ -3,6 +3,7 @@ import { IconArrowLeft, IconBuilding, IconPlus, IconSettings, IconTrash } from '
 import { FormEvent, useState } from 'react';
 
 import { AppSidebar } from '@/components/app-sidebar';
+import { NotificationListener } from '@/components/NotificationListener';
 import { SiteHeader } from '@/components/site-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -118,6 +119,7 @@ export default function Create({ jabatans, company }: Props) {
         <>
             <Head title="Tambah Masterflow" />
             <SidebarProvider>
+                <NotificationListener />
                 <AppSidebar variant="inset" />
                 <SidebarInset>
                     <SiteHeader />

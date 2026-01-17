@@ -2,6 +2,7 @@ import { Head, Link } from '@inertiajs/react';
 import { IconArrowLeft, IconBuilding, IconCheck, IconEdit, IconSettings, IconUser, IconX } from '@tabler/icons-react';
 
 import { AppSidebar } from '@/components/app-sidebar';
+import { NotificationListener } from '@/components/NotificationListener';
 import { SiteHeader } from '@/components/site-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ export default function Show({ masterflow, company }: Props) {
         <>
             <Head title={`Detail Masterflow - ${masterflow.name}`} />
             <SidebarProvider>
+                <NotificationListener />
                 <AppSidebar variant="inset" />
                 <SidebarInset>
                     <SiteHeader />

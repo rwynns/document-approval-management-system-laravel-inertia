@@ -1,4 +1,5 @@
 import { AppSidebar } from '@/components/app-sidebar';
+import { NotificationListener } from '@/components/NotificationListener';
 import { SiteHeader } from '@/components/site-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -414,6 +415,7 @@ export default function UserManagement() {
         <>
             <Head title="User Management" />
             <SidebarProvider>
+                <NotificationListener />
                 <AppSidebar variant="inset" />
                 <SidebarInset>
                     <SiteHeader />

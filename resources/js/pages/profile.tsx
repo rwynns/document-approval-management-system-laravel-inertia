@@ -2,6 +2,7 @@ import { type SharedData } from '@/types';
 import { Head, router, usePage } from '@inertiajs/react';
 
 import { AppSidebar } from '@/components/app-sidebar';
+import { NotificationListener } from '@/components/NotificationListener';
 import SignatureManager from '@/components/signature-manager';
 import { SiteHeader } from '@/components/site-header';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ export default function Profile({ mustVerifyEmail, status }: { mustVerifyEmail: 
         <>
             <Head title="Profile" />
             <SidebarProvider>
+                <NotificationListener />
                 <AppSidebar variant="inset" />
                 <SidebarInset>
                     <SiteHeader />

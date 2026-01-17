@@ -1,4 +1,5 @@
 import { AppSidebar } from '@/components/app-sidebar';
+import { NotificationListener } from '@/components/NotificationListener';
 import PDFViewer from '@/components/pdf-viewer';
 import { SiteHeader } from '@/components/site-header';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -146,6 +147,7 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
             <>
                 <Head title="Dokumen Not Found" />
                 <SidebarProvider>
+                    <NotificationListener />
                     <AppSidebar variant="inset" />
                     <SidebarInset>
                         <SiteHeader />
@@ -842,6 +844,7 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
             <Head title={dokumen?.judul_dokumen || 'Detail Dokumen'} />
 
             <SidebarProvider>
+                <NotificationListener />
                 <AppSidebar variant="inset" />
                 <SidebarInset>
                     <SiteHeader />

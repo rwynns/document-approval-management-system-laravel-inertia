@@ -1,4 +1,5 @@
 import { useBrowserNotification } from '@/hooks/useBrowserNotification';
+import { usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 
@@ -10,15 +11,14 @@ interface BrowserNotificationData {
     timestamp: string;
 }
 
-interface NotificationListenerProps {
-    userId?: number;
-}
-
 /**
  * Global component that listens for browser notification events via Laravel Echo
  * Should be mounted once in the app layout to handle all notification broadcasts
  */
-export function NotificationListener({ userId }: NotificationListenerProps) {
+export function NotificationListener() {
+    const { auth } = usePage().props as { auth?: { user?: { id: number } } };
+    const userId = auth?.user?.id;
+
     const { requestPermission, showNotification, isSupported, isPermitted } = useBrowserNotification();
     const [permissionRequested, setPermissionRequested] = useState(false);
     const channelRef = useRef<ReturnType<typeof window.Echo.channel> | null>(null);

@@ -708,37 +708,96 @@ class DokumenController extends Controller
 
             // Handle based on document status
             if ($dokumen->status === 'needs_revision') {
-                // Step-level revision: Only reset the specific approval that requested revision
+                // Step-level revision: Reset approvals and notify appropriately
                 $revisionApproval = DokumenApproval::where('dokumen_id', $dokumen->id)
                     ->where('approval_status', 'revision_requested')
                     ->first();
 
                 if ($revisionApproval) {
-                    $revisionApproval->update([
-                        'dokumen_version_id' => $dokumenVersion->id,
-                        'approval_status' => 'pending',
-                        'revision_notes' => null,
-                        'revision_requested_by' => null,
-                        'revision_requested_at' => null,
+                    // Check if this approval is part of a group
+                    if ($revisionApproval->group_index) {
+                        // Group approval scenario: Reset ALL approvals in the same group
+                        $groupApprovals = DokumenApproval::where('dokumen_id', $dokumen->id)
+                            ->where('group_index', $revisionApproval->group_index)
+                            ->get();
+
+                        foreach ($groupApprovals as $groupApproval) {
+                            // Reset each group member's approval
+                            $groupApproval->update([
+                                'dokumen_version_id' => $dokumenVersion->id,
+                                'approval_status' => 'pending',
+                                'tgl_approve' => null,
+                                'comment' => null,
+                                'signature_path' => null,
+                                'revision_notes' => null,
+                                'revision_requested_by' => null,
+                                'revision_requested_at' => null,
+                            ]);
+
+                            // Send email notification to each group member
+                            Mail::to($groupApproval->user->email)
+                                ->queue(new \App\Mail\RevisionUploadedMail(
+                                    $dokumen,
+                                    $groupApproval->fresh(),
+                                    $newVersion
+                                ));
+
+                            // Broadcast browser notification to each group member
+                            broadcast(new BrowserNotificationEvent(
+                                userId: $groupApproval->user_id,
+                                title: 'Revisi Dokumen Telah Diupload',
+                                body: "Dokumen '{$dokumen->judul_dokumen}' (v{$newVersion}) telah direvisi dan membutuhkan persetujuan ulang.",
+                                url: route('approvals.show', $groupApproval->id),
+                                type: 'info'
+                            ));
+
+                            Log::info('Notified group member about revision', [
+                                'approval_id' => $groupApproval->id,
+                                'user_id' => $groupApproval->user_id,
+                                'group_index' => $revisionApproval->group_index,
+                            ]);
+                        }
+                    } else {
+                        // Single approver scenario: Just reset the one who requested revision
+                        $revisionApproval->update([
+                            'dokumen_version_id' => $dokumenVersion->id,
+                            'approval_status' => 'pending',
+                            'revision_notes' => null,
+                            'revision_requested_by' => null,
+                            'revision_requested_at' => null,
+                        ]);
+
+                        // Dispatch email notification for the reset approval
+                        SendApprovalNotification::dispatch($revisionApproval->fresh());
+
+                        // Broadcast browser notification to approver
+                        broadcast(new BrowserNotificationEvent(
+                            userId: $revisionApproval->user_id,
+                            title: 'Dokumen Telah Direvisi',
+                            body: "Dokumen '{$dokumen->judul_dokumen}' telah direvisi dan membutuhkan persetujuan Anda.",
+                            url: route('approvals.show', $revisionApproval->id),
+                            type: 'info'
+                        ));
+                    }
+
+                    // Update document status back to under_review
+                    $dokumen->update([
+                        'status' => 'under_review',
+                        'status_current' => 'waiting_approval_' . ($revisionApproval->masterflowStep?->step_order ?? 1),
                     ]);
-
-                    // Dispatch email notification for the reset approval
-                    SendApprovalNotification::dispatch($revisionApproval->fresh());
-
-                    // Broadcast browser notification to approver
-                    broadcast(new BrowserNotificationEvent(
-                        userId: $revisionApproval->user_id,
-                        title: 'Dokumen Telah Direvisi',
-                        body: "Dokumen '{$dokumen->judul_dokumen}' telah direvisi dan membutuhkan persetujuan Anda.",
-                        url: route('approvals.show', $revisionApproval->id),
-                        type: 'info'
-                    ));
                 }
 
                 // Update all other pending approvals to use new version
                 DokumenApproval::where('dokumen_id', $dokumen->id)
                     ->where('approval_status', 'pending')
                     ->where('id', '!=', $revisionApproval?->id)
+                    ->when($revisionApproval?->group_index, function ($query) use ($revisionApproval) {
+                        // Exclude group members that were already updated above
+                        $query->where(function ($q) use ($revisionApproval) {
+                            $q->whereNull('group_index')
+                                ->orWhere('group_index', '!=', $revisionApproval->group_index);
+                        });
+                    })
                     ->update(['dokumen_version_id' => $dokumenVersion->id]);
             } else {
                 // Rejection at specific step: Only reset from rejected step onwards

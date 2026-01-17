@@ -3,6 +3,7 @@ import { IconArrowLeft, IconBuilding, IconEdit, IconPlus, IconSettings, IconTras
 import { FormEvent, useState } from 'react';
 
 import { AppSidebar } from '@/components/app-sidebar';
+import { NotificationListener } from '@/components/NotificationListener';
 import { SiteHeader } from '@/components/site-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -131,6 +132,7 @@ export default function Edit({ masterflow, jabatans, company }: Props) {
         <>
             <Head title={`Edit Masterflow - ${masterflow.name}`} />
             <SidebarProvider>
+                <NotificationListener />
                 <AppSidebar variant="inset" />
                 <SidebarInset>
                     <SiteHeader />
