@@ -227,69 +227,14 @@ class DokumenApprovalController extends Controller
 
         // Post-processing outside transaction to avoid blocking DB connections
         try {
-            // Add signature to PDF document
-            Log::info('Checking if signature should be embedded', [
+            // NOTE: PDF signature embedding removed for storage optimization.
+            // Signatures are now rendered on-demand when viewing/downloading documents
+            // using PdfSignatureService::generateSignedPdfStream()
+            Log::info('Approval completed - signature stored for on-demand rendering', [
                 'signature_path' => $signaturePath,
-                'has_dokumen_version' => !is_null($approval->dokumenVersion),
-                'dokumen_version' => $approval->dokumenVersion,
+                'approval_id' => $approval->id,
+                'dokumen_id' => $approval->dokumen_id,
             ]);
-
-            if ($signaturePath && $approval->dokumenVersion) {
-                try {
-                    $originalPdfPath = $approval->dokumenVersion->file_url;
-                    Log::info('Starting PDF signature embedding', [
-                        'original_pdf' => $originalPdfPath,
-                        'signature_path' => $signaturePath,
-                        'approval_id' => $approval->id
-                    ]);
-
-                    // Get all approved signatures for this document
-                    $allApprovedApprovals = DokumenApproval::where('dokumen_id', $approval->dokumen_id)
-                        ->where('approval_status', 'approved')
-                        ->whereNotNull('signature_path')
-                        ->with(['user', 'masterflowStep'])
-                        ->get();
-
-                    // Prepare signatures array
-                    $signatures = [];
-                    foreach ($allApprovedApprovals as $approvedApproval) {
-                        $signatures[] = [
-                            'path' => $approvedApproval->signature_path,
-                            'name' => $approvedApproval->user->name ?? '',
-                            'text' => $approvedApproval->masterflowStep?->step_name ?? 'Approved',
-                            'date' => $approvedApproval->tgl_approve?->format('d/m/Y H:i') ?? now()->format('d/m/Y H:i'),
-                        ];
-                    }
-
-                    Log::info('Signatures prepared for PDF', [
-                        'count' => count($signatures),
-                        'signatures' => $signatures
-                    ]);
-
-                    // Add all signatures to PDF
-                    $signedPdfPath = $pdfSignatureService->addMultipleSignaturesToPdf(
-                        $originalPdfPath,
-                        $signatures
-                    );
-
-                    Log::info('PDF signature embedding completed', [
-                        'signed_pdf_path' => $signedPdfPath
-                    ]);
-
-                    // Update dokumen version with signed PDF path (keep original file_url intact)
-                    $approval->dokumenVersion->update([
-                        'signed_file_url' => $signedPdfPath,
-                    ]);
-
-                    Log::info('Updated dokumen version with signed PDF');
-                } catch (\Exception $e) {
-                    // Log error but don't fail the approval
-                    Log::error('Failed to add signature to PDF: ' . $e->getMessage(), [
-                        'exception' => $e,
-                        'trace' => $e->getTraceAsString()
-                    ]);
-                }
-            }
 
             // Broadcast dokumen updated event for real-time updates (minimal payload)
             $dokumen = $approval->dokumen->fresh();

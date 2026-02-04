@@ -615,8 +615,8 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
 
     // Handle preview document
     const handlePreview = (version: DokumenVersion) => {
-        const filePath = version.signed_file_url || version.file_url;
-        const fileUrl = `/storage/${filePath}`;
+        // Use streaming endpoint for on-demand signature rendering
+        const fileUrl = `/api/dokumen/${dokumen.id}/signed-pdf/${version.id}`;
         const fileType = version.tipe_file.toLowerCase();
         const isPDF = fileType === 'pdf' || fileType === 'application/pdf';
 
@@ -744,9 +744,9 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
         }
     };
 
-    // Download file
+    // Download file - uses on-demand signature generation
     const handleDownload = (versionId?: number) => {
-        const url = versionId ? `/dokumen/${dokumen.id}/download/${versionId}` : `/dokumen/${dokumen.id}/download`;
+        const url = versionId ? `/api/dokumen/${dokumen.id}/download/${versionId}` : `/api/dokumen/${dokumen.id}/download`;
         window.location.href = url;
     };
 

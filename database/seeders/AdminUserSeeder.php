@@ -15,12 +15,12 @@ class AdminUserSeeder extends Seeder
     public function run(): void
     {
         // Create or find Super Admin user
-        $superAdmin = DB::table('users')->where('email', 'superadmin@example.com')->first();
+        $superAdmin = DB::table('users')->where('email', 'superadmin@gmail.com')->first();
 
         if (!$superAdmin) {
             $superAdminId = DB::table('users')->insertGetId([
                 'name' => 'Super Administrator',
-                'email' => 'superadmin@example.com',
+                'email' => 'superadmin@gmail.com',
                 'password' => Hash::make('password123'),
                 'pin' => '12345678',
                 'email_verified_at' => now(),

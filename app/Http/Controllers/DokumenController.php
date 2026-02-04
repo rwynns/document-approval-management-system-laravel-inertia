@@ -689,10 +689,22 @@ class DokumenController extends Controller
             $currentVersion = $latestVersion ? floatval($latestVersion->version) : 0.0;
             $newVersion = number_format($currentVersion + 1.0, 1);
 
-            // Upload new file
+            // Upload new file - use same folder structure as initial upload
             $file = $request->file('file');
-            $filename = time() . '_' . \Illuminate\Support\Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)) . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('documents', $filename, 'public');
+
+            // Create folder path based on nomor_dokumen (same as store method)
+            $folderPath = 'dokumen/' . $dokumen->nomor_dokumen;
+
+            // Clean up judul for filename (same pattern as store method)
+            $cleanJudul = preg_replace('/[^A-Za-z0-9\-_]/', '_', $dokumen->judul_dokumen);
+            $cleanJudul = preg_replace('/_+/', '_', $cleanJudul);
+
+            // Create filename: nomor_dokumen_judul_v{version}.ext
+            $extension = $file->getClientOriginalExtension();
+            $filename = $dokumen->nomor_dokumen . '_' . $cleanJudul . '_v' . str_replace('.', '', $newVersion) . '.' . $extension;
+
+            // Store file in document-specific folder
+            $path = $file->storeAs($folderPath, $filename, 'public');
 
             // Create new version
             $dokumenVersion = DokumenVersion::create([
@@ -700,7 +712,7 @@ class DokumenController extends Controller
                 'version' => $newVersion,
                 'nama_file' => $file->getClientOriginalName(),
                 'tgl_upload' => now(),
-                'tipe_file' => $file->getClientMimeType(),
+                'tipe_file' => $extension,
                 'file_url' => $path,
                 'size_file' => $file->getSize(),
                 'status' => 'active',
@@ -895,44 +907,20 @@ class DokumenController extends Controller
             // Add revision comment
             $commentText = 'Dokumen direvisi - Version ' . $newVersion;
 
-            // Re-apply signatures from earlier approved steps (if there are any)
-            // This ensures previous approvals stick to the revised document
-            try {
-                $approvedApprovals = DokumenApproval::where('dokumen_id', $dokumen->id)
-                    ->where('approval_status', 'approved')
-                    ->whereNotNull('signature_path')
-                    ->with(['user', 'masterflowStep'])
-                    ->get();
+            // NOTE: Signed PDF file creation removed for storage optimization.
+            // Previous approvals' signatures are rendered on-demand when viewing/downloading.
+            // The signature_path is preserved in dokumen_approvals table for on-demand rendering.
+            $approvedApprovals = DokumenApproval::where('dokumen_id', $dokumen->id)
+                ->where('approval_status', 'approved')
+                ->whereNotNull('signature_path')
+                ->count();
 
-                if ($approvedApprovals->isNotEmpty()) {
-                    Log::info('Re-applying signatures for revised document', [
-                        'dokumen_id' => $dokumen->id,
-                        'version' => $newVersion,
-                        'count' => $approvedApprovals->count()
-                    ]);
-
-                    $signatures = [];
-                    foreach ($approvedApprovals as $approval) {
-                        $signatures[] = [
-                            'path' => $approval->signature_path,
-                            'name' => $approval->user->name ?? '',
-                            'text' => $approval->masterflowStep?->step_name ?? 'Approved',
-                            'date' => $approval->tgl_approve?->format('d/m/Y H:i') ?? now()->format('d/m/Y H:i'),
-                        ];
-                    }
-
-                    $signedPdfPath = $pdfSignatureService->addMultipleSignaturesToPdf(
-                        $dokumenVersion->file_url,
-                        $signatures
-                    );
-
-                    $dokumenVersion->update([
-                        'signed_file_url' => $signedPdfPath,
-                    ]);
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to re-apply signatures for revision: ' . $e->getMessage());
-                // Continue without failing the request
+            if ($approvedApprovals > 0) {
+                Log::info('Revision uploaded - previous signatures will be rendered on-demand', [
+                    'dokumen_id' => $dokumen->id,
+                    'version' => $newVersion,
+                    'approved_signatures_count' => $approvedApprovals
+                ]);
             }
 
             if ($request->has('comment') || isset($validated['comment'])) {
@@ -1008,8 +996,9 @@ class DokumenController extends Controller
 
     /**
      * Download document file.
+     * Uses on-demand PDF generation for signed documents.
      */
-    public function download(Dokumen $dokumen, $versionId = null)
+    public function download(Dokumen $dokumen, $versionId = null, PdfSignatureService $pdfSignatureService)
     {
         $version = $versionId
             ? $dokumen->versions()->findOrFail($versionId)
@@ -1019,16 +1008,106 @@ class DokumenController extends Controller
             return back()->withErrors(['error' => 'Versi dokumen tidak ditemukan.']);
         }
 
-        // Prefer signed file if available
-        $path = ($version->signed_file_url && Storage::disk('public')->exists($version->signed_file_url))
-            ? $version->signed_file_url
-            : $version->file_url;
-
-        if (!$path || !Storage::disk('public')->exists($path)) {
+        // Check if original file exists
+        if (!$version->file_url || !Storage::disk('public')->exists($version->file_url)) {
             return back()->withErrors(['error' => 'File tidak ditemukan.']);
         }
 
-        $filePath = Storage::disk('public')->path($path);
+        // Get approved signatures for this document
+        $approvedSignatures = DokumenApproval::where('dokumen_id', $dokumen->id)
+            ->where('approval_status', 'approved')
+            ->whereNotNull('signature_path')
+            ->with(['user', 'masterflowStep'])
+            ->orderBy('created_at')
+            ->get();
+
+        // If there are approved signatures, generate signed PDF on-the-fly
+        if ($approvedSignatures->count() > 0 && strtolower($version->tipe_file) === 'pdf') {
+            try {
+                $pdfContent = $pdfSignatureService->generateSignedPdfStream(
+                    $version->file_url,
+                    $approvedSignatures
+                );
+
+                $signedFilename = pathinfo($version->nama_file, PATHINFO_FILENAME) . '_signed.pdf';
+
+                return response($pdfContent)
+                    ->header('Content-Type', 'application/pdf')
+                    ->header('Content-Disposition', 'attachment; filename="' . $signedFilename . '"')
+                    ->header('Content-Length', strlen($pdfContent));
+            } catch (\Exception $e) {
+                Log::error('Failed to generate signed PDF for download', [
+                    'error' => $e->getMessage(),
+                    'dokumen_id' => $dokumen->id,
+                    'version_id' => $version->id,
+                ]);
+                // Fallback to original file
+            }
+        }
+
+        // Download original file
+        $filePath = Storage::disk('public')->path($version->file_url);
         return response()->download($filePath, $version->nama_file);
+    }
+
+    /**
+     * Stream signed PDF with all approved signatures (on-demand generation).
+     * This endpoint is used for PDF preview in the browser.
+     */
+    public function streamSignedPdf(Dokumen $dokumen, PdfSignatureService $pdfSignatureService, $versionId = null)
+    {
+        $version = $versionId
+            ? $dokumen->versions()->findOrFail($versionId)
+            : $dokumen->latestVersion;
+
+        if (!$version) {
+            abort(404, 'Versi dokumen tidak ditemukan.');
+        }
+
+        // Check if original file exists
+        if (!$version->file_url || !Storage::disk('public')->exists($version->file_url)) {
+            abort(404, 'File tidak ditemukan.');
+        }
+
+        // Get approved signatures for this document
+        $approvedSignatures = DokumenApproval::where('dokumen_id', $dokumen->id)
+            ->where('approval_status', 'approved')
+            ->whereNotNull('signature_path')
+            ->with(['user', 'masterflowStep'])
+            ->orderBy('created_at')
+            ->get();
+
+        // If no signatures or not a PDF, stream original file
+        if ($approvedSignatures->count() === 0 || strtolower($version->tipe_file) !== 'pdf') {
+            $filePath = Storage::disk('public')->path($version->file_url);
+            return response()->file($filePath, [
+                'Content-Type' => 'application/pdf',
+            ]);
+        }
+
+        // Generate signed PDF on-the-fly
+        try {
+            $pdfContent = $pdfSignatureService->generateSignedPdfStream(
+                $version->file_url,
+                $approvedSignatures
+            );
+
+            return response($pdfContent)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="signed_' . $version->nama_file . '"')
+                ->header('Content-Length', strlen($pdfContent));
+        } catch (\Exception $e) {
+            Log::error('Failed to generate signed PDF stream', [
+                'error' => $e->getMessage(),
+                'dokumen_id' => $dokumen->id,
+                'version_id' => $version->id,
+            ]);
+
+            // Fallback to original file
+            $filePath = Storage::disk('public')->path($version->file_url);
+            return response()->file($filePath, [
+                'Content-Type' => 'application/pdf',
+            ]);
+        }
     }
 }

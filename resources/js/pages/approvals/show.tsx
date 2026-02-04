@@ -233,10 +233,10 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
         });
     };
 
-    // Handle download
+    // Handle download - uses on-demand signature generation
     const handleDownload = () => {
         if (approval.dokumen_version) {
-            window.location.href = `/dokumen/${approval.dokumen.id}/download/${approval.dokumen_version.id}`;
+            window.location.href = `/api/dokumen/${approval.dokumen.id}/download/${approval.dokumen_version.id}`;
         }
     };
 
@@ -247,7 +247,8 @@ export default function ApproverShow({ approval, allApprovals, canApprove }: Pro
 
         const fileType = targetVersion.tipe_file.toLowerCase();
         if (fileType === 'pdf' || fileType === 'application/pdf') {
-            const url = `/storage/${targetVersion.signed_file_url || targetVersion.file_url}`;
+            // Use streaming endpoint for on-demand signature rendering
+            const url = `/api/dokumen/${approval.dokumen.id}/signed-pdf/${targetVersion.id}`;
             setPreviewFileUrl(url);
             setPreviewFileName(targetVersion.nama_file);
             setPreviewVersionId(targetVersion.id);

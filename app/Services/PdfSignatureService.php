@@ -222,6 +222,84 @@ class PdfSignatureService
     }
 
     /**
+     * Generate signed PDF as stream (no file saved to disk)
+     * This is used for on-demand rendering to save storage space
+     *
+     * @param string $pdfPath Path to the original PDF file
+     * @param \Illuminate\Support\Collection $approvals Collection of approved DokumenApproval models
+     * @return string PDF binary content
+     * @throws Exception
+     */
+    public function generateSignedPdfStream(string $pdfPath, $approvals): string
+    {
+        try {
+            $pdf = new Fpdi();
+
+            $fullPdfPath = Storage::disk('public')->path($pdfPath);
+
+            if (!file_exists($fullPdfPath)) {
+                throw new Exception("PDF file not found: {$fullPdfPath}");
+            }
+
+            $pageCount = $pdf->setSourceFile($fullPdfPath);
+
+            // Import all pages
+            for ($i = 1; $i <= $pageCount; $i++) {
+                $pdf->AddPage();
+                $tplIdx = $pdf->importPage($i);
+                $pdf->useTemplate($tplIdx);
+
+                // Add signatures on the last page
+                if ($i == $pageCount && $approvals->count() > 0) {
+                    $yPosition = 220; // Starting Y position
+                    $xPosition = 20; // Starting X position
+                    $signaturesPerRow = 3;
+                    $signatureWidth = 35;
+                    $signatureHeight = 13;
+                    $spacing = 60; // Horizontal spacing
+
+                    foreach ($approvals as $index => $approval) {
+                        if (!$approval->signature_path) {
+                            continue;
+                        }
+
+                        $fullSignaturePath = Storage::disk('public')->path($approval->signature_path);
+
+                        if (!file_exists($fullSignaturePath)) {
+                            continue; // Skip if signature file not found
+                        }
+
+                        // Calculate position
+                        $row = floor($index / $signaturesPerRow);
+                        $col = $index % $signaturesPerRow;
+
+                        $x = $xPosition + ($col * $spacing);
+                        $y = $yPosition + ($row * 30); // 30mm vertical spacing
+
+                        $options = [
+                            'x' => $x,
+                            'y' => $y,
+                            'width' => $signatureWidth,
+                            'height' => $signatureHeight,
+                            'add_text' => true,
+                            'text' => $approval->masterflowStep?->step_name ?? 'Approved',
+                            'date' => $approval->tgl_approve?->format('d/m/Y H:i') ?? now()->format('d/m/Y H:i'),
+                            'name' => $approval->user?->name ?? null,
+                        ];
+
+                        $this->addSignatureToPage($pdf, $fullSignaturePath, $options);
+                    }
+                }
+            }
+
+            // Return PDF content as string (no file saved)
+            return $pdf->Output('S');
+        } catch (Exception $e) {
+            throw new Exception("Failed to generate signed PDF stream: " . $e->getMessage());
+        }
+    }
+
+    /**
      * Get signature placement suggestions based on document size
      *
      * @param string $pdfPath
