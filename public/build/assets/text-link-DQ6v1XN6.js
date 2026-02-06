@@ -1,0 +1,1 @@
+import{j as n,L as s}from"./app-CNJch6fJ.js";import{c as i}from"./button-Bc8fY39k.js";function m({className:e,children:t,...r}){return n.jsx(s,{...r,className:i("text-sm text-primary underline-offset-4 hover:underline",e),children:t})}export{m as T};

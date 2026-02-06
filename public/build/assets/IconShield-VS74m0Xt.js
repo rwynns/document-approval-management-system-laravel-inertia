@@ -1,0 +1,6 @@
+import{c as e}from"./createReactComponent-CAvr32i6.js";/**
+ * @license @tabler/icons-react v3.34.1 - MIT
+ *
+ * This source code is licensed under the MIT license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const o=[["path",{d:"M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3",key:"svg-0"}]],t=e("outline","shield","Shield",o);export{t as I};
