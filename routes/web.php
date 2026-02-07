@@ -20,6 +20,10 @@ Route::get('/', function () {
     return redirect()->route('login');
 });
 
+Route::get('jagad', function () {
+    return response()->json(['message' => 'Jagad route working']);
+})->name('jagad.index');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', function () {
         // Use ContextService to get the current context's role
@@ -144,10 +148,6 @@ Route::middleware(['auth'])->group(function () {
 
 // Other Document Related Routes
 Route::middleware(['auth'])->group(function () {
-    Route::get('jagad', function () {
-        return response()->json(['message' => 'Jagad route working']);
-    })->name('jagad.index');
-
     // Document approvals
     Route::get('approvals', [\App\Http\Controllers\DokumenApprovalController::class, 'index'])->name('approvals.index');
     Route::get('approvals/{approval}', [\App\Http\Controllers\DokumenApprovalController::class, 'show'])->name('approvals.show');
