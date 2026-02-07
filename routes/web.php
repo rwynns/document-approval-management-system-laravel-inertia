@@ -144,7 +144,9 @@ Route::middleware(['auth'])->group(function () {
 
 // Other Document Related Routes
 Route::middleware(['auth'])->group(function () {
-    Route::get('jagad', [\App\Http\Controllers\DokumenApprovalController::class, 'index'])->name('jagad.index');
+    Route::get('jagad', function () {
+        return response()->json(['message' => 'Jagad route working']);
+    })->name('jagad.index');
 
     // Document approvals
     Route::get('approvals', [\App\Http\Controllers\DokumenApprovalController::class, 'index'])->name('approvals.index');
