@@ -35,7 +35,6 @@ class DokumenApprovalController extends Controller
      */
     public function index(Request $request)
     {
-        dd('stop');
         $query = DokumenApproval::with([
             'dokumen.user',
             'dokumen.latestVersion',
