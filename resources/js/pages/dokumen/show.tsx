@@ -472,9 +472,26 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
     // Handle file change
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+
+            // Validate file type - only PDF allowed
+            if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                showToast.error('❌ Format file harus PDF! Silakan pilih file dengan format .pdf');
+                e.target.value = ''; // Reset input
+                return;
+            }
+
+            // Validate file size - max 10MB
+            const maxSize = 10 * 1024 * 1024;
+            if (file.size > maxSize) {
+                showToast.error('❌ Ukuran file maksimal 10MB!');
+                e.target.value = ''; // Reset input
+                return;
+            }
+
             setFormData((prev) => ({
                 ...prev,
-                file: e.target.files![0],
+                file: file,
             }));
 
             if (errors.file) {
@@ -685,15 +702,17 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
         const file = e.target.files?.[0] || null;
 
         if (file) {
-            const maxSize = 50 * 1024 * 1024; // 50MB
-            if (file.size > maxSize) {
-                showToast.error('❌ Ukuran file maksimal 50MB');
+            // Validate file type - only PDF allowed
+            if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                showToast.error('❌ Format file harus PDF! Silakan pilih file dengan format .pdf');
+                e.target.value = ''; // Reset input
                 return;
             }
 
-            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-            if (!allowedTypes.includes(file.type)) {
-                showToast.error('❌ Format file harus PDF atau Word');
+            const maxSize = 50 * 1024 * 1024; // 50MB
+            if (file.size > maxSize) {
+                showToast.error('❌ Ukuran file maksimal 50MB');
+                e.target.value = ''; // Reset input
                 return;
             }
         }
@@ -1382,15 +1401,10 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                         <Label htmlFor="file" className="font-sans">
                                             Upload File Baru (Opsional)
                                         </Label>
-                                        <Input
-                                            id="file"
-                                            name="file"
-                                            type="file"
-                                            onChange={handleFileChange}
-                                            className="font-sans"
-                                            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                                        />
-                                        <p className="text-xs text-muted-foreground">Kosongkan jika tidak ingin mengganti file. Max 10MB.</p>
+                                        <Input id="file" name="file" type="file" onChange={handleFileChange} className="font-sans" />
+                                        <p className="text-xs text-muted-foreground">
+                                            📄 <strong>Hanya file PDF yang diterima.</strong> Kosongkan jika tidak ingin mengganti file. Max 10MB.
+                                        </p>
                                     </div>
                                 </div>
 
@@ -1480,14 +1494,11 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                     <Label htmlFor="revision-file" className="font-sans">
                                         File Revisi *
                                     </Label>
-                                    <Input
-                                        id="revision-file"
-                                        type="file"
-                                        accept=".pdf,.doc,.docx"
-                                        onChange={handleRevisionFileChange}
-                                        className="font-sans"
-                                    />
-                                    <p className="text-xs text-muted-foreground">Format: PDF atau Word. Maksimal 50MB.</p>
+                                    <Input id="revision-file" type="file" onChange={handleRevisionFileChange} className="font-sans" />
+                                    <p className="text-xs text-muted-foreground">
+                                        📄 <strong>Hanya file PDF yang diterima.</strong> Sistem tanda tangan digital hanya mendukung format PDF.
+                                        Maksimal 50MB.
+                                    </p>
                                     {revisionFile && <p className="text-sm text-green-600">✓ File dipilih: {revisionFile.name}</p>}
                                 </div>
                                 <div className="space-y-2">

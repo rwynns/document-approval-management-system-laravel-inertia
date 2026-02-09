@@ -69,7 +69,7 @@ class DokumenVersionController extends Controller
                     }
                 },
             ],
-            'file' => 'required|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx|max:10240', // 10MB
+            'file' => 'required|file|mimes:pdf|max:10240', // 10MB - Only PDF for digital signature support
             'change_notes' => 'nullable|string|max:1000',
         ]);
 

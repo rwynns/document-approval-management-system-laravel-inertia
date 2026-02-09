@@ -185,7 +185,7 @@ class DokumenController extends Controller
             'tgl_pengajuan' => 'required|date',
             'tgl_deadline' => 'required|date|after_or_equal:tgl_pengajuan',
             'deskripsi' => 'nullable|string',
-            'file' => 'required|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx|max:10240', // 10MB
+            'file' => 'required|file|mimes:pdf|max:10240', // 10MB - Only PDF for digital signature support
             'submit_type' => 'required|in:draft,submit', // Validate submit type
         ];
 
@@ -470,7 +470,7 @@ class DokumenController extends Controller
             'judul_dokumen' => 'required|string|max:255',
             'tgl_deadline' => 'nullable|date',
             'deskripsi' => 'nullable|string',
-            'file' => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx|max:10240',
+            'file' => 'nullable|file|mimes:pdf|max:10240', // Only PDF for digital signature support
         ]);
 
         DB::beginTransaction();
@@ -678,7 +678,7 @@ class DokumenController extends Controller
         }
 
         $validated = $request->validate([
-            'file' => 'required|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx|max:10240',
+            'file' => 'required|file|mimes:pdf|max:10240', // Only PDF for digital signature support
             'comment' => 'nullable|string|max:1000',
         ]);
 

@@ -454,9 +454,26 @@ export default function UserDokumen() {
     // Handle file input change
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+
+            // Validate file type - only PDF allowed
+            if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                showToast.error('❌ Format file harus PDF! Silakan pilih file dengan format .pdf');
+                e.target.value = ''; // Reset input
+                return;
+            }
+
+            // Validate file size - max 10MB
+            const maxSize = 10 * 1024 * 1024;
+            if (file.size > maxSize) {
+                showToast.error('❌ Ukuran file maksimal 10MB!');
+                e.target.value = ''; // Reset input
+                return;
+            }
+
             setFormData((prev) => ({
                 ...prev,
-                file: e.target.files![0],
+                file: file,
             }));
 
             if (errors.file) {
@@ -1458,9 +1475,11 @@ export default function UserDokumen() {
                                             type="file"
                                             onChange={handleFileChange}
                                             className={errors.file ? 'border-red-500 font-sans' : 'font-sans'}
-                                            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                                         />
-                                        <p className="text-xs text-muted-foreground">Format: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX (Max 10MB)</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            📄 <strong>Hanya file PDF yang diterima.</strong> Sistem tanda tangan digital hanya mendukung format PDF.
+                                            (Max 10MB)
+                                        </p>
                                         {errors.file && <p className="text-sm text-red-500">{errors.file[0]}</p>}
                                     </div>
                                 </div>
