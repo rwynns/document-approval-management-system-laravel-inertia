@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Head, router, usePage } from '@inertiajs/react';
-import { IconDownload, IconEdit, IconEye, IconFileText, IconSend, IconTrash, IconUsers } from '@tabler/icons-react';
+import { IconDownload, IconEdit, IconEye, IconFileText, IconPrinter, IconSend, IconTrash, IconUsers } from '@tabler/icons-react';
 import { AlertCircleIcon, CalendarIcon, CheckCircle2, CheckCircle2Icon, ClockIcon, FileTextIcon, XCircleIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -709,9 +709,9 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                 return;
             }
 
-            const maxSize = 50 * 1024 * 1024; // 50MB
+            const maxSize = 10 * 1024 * 1024; // 10MB
             if (file.size > maxSize) {
-                showToast.error('❌ Ukuran file maksimal 50MB');
+                showToast.error('❌ Ukuran file maksimal 10MB!');
                 e.target.value = ''; // Reset input
                 return;
             }
@@ -767,6 +767,17 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
     const handleDownload = (versionId?: number) => {
         const url = versionId ? `/api/dokumen/${dokumen.id}/download/${versionId}` : `/api/dokumen/${dokumen.id}/download`;
         window.location.href = url;
+    };
+
+    // Print file - opens PDF in new tab and triggers print
+    const handlePrint = (version: DokumenVersion) => {
+        const fileUrl = `/api/dokumen/${dokumen.id}/signed-pdf/${version.id}`;
+        const printWindow = window.open(fileUrl, '_blank');
+        if (printWindow) {
+            printWindow.addEventListener('load', () => {
+                printWindow.print();
+            });
+        }
     };
 
     // Sort approvals by order or step_order
@@ -1202,14 +1213,34 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                                                         </div>
                                                                     </div>
                                                                 </div>
-                                                                <div className="flex gap-2">
+                                                                <div className="flex gap-1">
                                                                     {(version.tipe_file.toLowerCase() === 'pdf' ||
                                                                         version.tipe_file.toLowerCase() === 'application/pdf') && (
-                                                                        <Button variant="ghost" size="icon" onClick={() => handlePreview(version)}>
-                                                                            <IconEye className="h-4 w-4" />
-                                                                        </Button>
+                                                                        <>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="icon"
+                                                                                onClick={() => handlePreview(version)}
+                                                                                title="Lihat"
+                                                                            >
+                                                                                <IconEye className="h-4 w-4" />
+                                                                            </Button>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="icon"
+                                                                                onClick={() => handlePrint(version)}
+                                                                                title="Print"
+                                                                            >
+                                                                                <IconPrinter className="h-4 w-4" />
+                                                                            </Button>
+                                                                        </>
                                                                     )}
-                                                                    <Button variant="ghost" size="icon" onClick={() => handleDownload(version.id)}>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        onClick={() => handleDownload(version.id)}
+                                                                        title="Download"
+                                                                    >
                                                                         <IconDownload className="h-4 w-4" />
                                                                     </Button>
                                                                 </div>
@@ -1497,7 +1528,7 @@ export default function DokumenDetail({ dokumen: initialDokumen }: { dokumen: Do
                                     <Input id="revision-file" type="file" onChange={handleRevisionFileChange} className="font-sans" />
                                     <p className="text-xs text-muted-foreground">
                                         📄 <strong>Hanya file PDF yang diterima.</strong> Sistem tanda tangan digital hanya mendukung format PDF.
-                                        Maksimal 50MB.
+                                        Maksimal 10MB.
                                     </p>
                                     {revisionFile && <p className="text-sm text-green-600">✓ File dipilih: {revisionFile.name}</p>}
                                 </div>

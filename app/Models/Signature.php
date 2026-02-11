@@ -59,7 +59,7 @@ class Signature extends Model
      */
     public function getSignatureUrlAttribute(): string
     {
-        return Storage::url($this->signature_path);
+        return Storage::disk('public')->url($this->signature_path);
     }
 
     /**

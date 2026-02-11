@@ -3,7 +3,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { showToast } from '@/lib/toast';
-import { IconPencil, IconTrash, IconUpload } from '@tabler/icons-react';
+import { IconPencil, IconSignature, IconTrash, IconUpload } from '@tabler/icons-react';
+import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
 
 interface Signature {
@@ -67,8 +68,11 @@ export default function SignaturePad({ onSignatureComplete, onCancel }: Signatur
 
     const fetchSignatures = async () => {
         try {
-            const response = await fetch(route('signatures.index'));
-            const data = await response.json();
+            const response = await axios.get(route('signatures.index'), {
+                headers: { Accept: 'application/json' },
+                withCredentials: true,
+            });
+            const data = response.data;
             setSignatures(data.signatures || []);
 
             // Auto-select default signature if exists
@@ -251,12 +255,29 @@ export default function SignaturePad({ onSignatureComplete, onCancel }: Signatur
                     {signatures.length === 0 ? (
                         <Card>
                             <CardContent className="flex flex-col items-center justify-center py-12">
-                                <IconUpload className="h-12 w-12 text-muted-foreground" />
-                                <h3 className="mt-4 font-serif text-lg font-semibold">Belum ada tanda tangan tersimpan</h3>
-                                <p className="mt-2 text-center font-sans text-sm text-muted-foreground">
-                                    Anda belum memiliki tanda tangan tersimpan. Silakan buat tanda tangan baru di tab "Gambar Tanda Tangan" atau
-                                    kelola tanda tangan Anda di halaman Pengaturan.
+                                <div className="mb-4 rounded-full bg-muted p-4">
+                                    <IconSignature className="h-8 w-8 text-muted-foreground" />
+                                </div>
+                                <h3 className="font-serif text-lg font-semibold">Belum ada tanda tangan tersimpan</h3>
+                                <p className="mt-2 max-w-sm text-center font-sans text-sm text-muted-foreground">
+                                    Anda belum memiliki tanda tangan yang tersimpan. Anda bisa membuat tanda tangan terlebih dahulu di halaman{' '}
+                                    <a href="/profile" className="font-medium text-primary underline hover:text-primary/80">
+                                        Profile
+                                    </a>{' '}
+                                    atau gunakan tab "Gambar Tanda Tangan" untuk menggambar secara manual.
                                 </p>
+                                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                                    <Button type="button" variant="outline" size="sm" className="font-sans" onClick={() => setSelectedTab('draw')}>
+                                        <IconPencil className="mr-2 h-4 w-4" />
+                                        Gambar Manual
+                                    </Button>
+                                    <Button type="button" variant="default" size="sm" className="font-sans" asChild>
+                                        <a href="/profile">
+                                            <IconSignature className="mr-2 h-4 w-4" />
+                                            Buat di Halaman Profile
+                                        </a>
+                                    </Button>
+                                </div>
                             </CardContent>
                         </Card>
                     ) : (
@@ -302,21 +323,18 @@ export default function SignaturePad({ onSignatureComplete, onCancel }: Signatur
                         </div>
                     )}
 
-                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                        {onCancel && (
-                            <Button type="button" variant="outline" onClick={onCancel} className="font-sans">
-                                Batal
+                    {signatures.length > 0 && (
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                            {onCancel && (
+                                <Button type="button" variant="outline" onClick={onCancel} className="font-sans">
+                                    Batal
+                                </Button>
+                            )}
+                            <Button type="button" onClick={handleUseSavedSignature} disabled={!selectedSignature} className="font-sans">
+                                Gunakan Tanda Tangan Ini
                             </Button>
-                        )}
-                        <Button
-                            type="button"
-                            onClick={handleUseSavedSignature}
-                            disabled={!selectedSignature || signatures.length === 0}
-                            className="font-sans"
-                        >
-                            Gunakan Tanda Tangan Ini
-                        </Button>
-                    </div>
+                        </div>
+                    )}
                 </TabsContent>
             </Tabs>
         </div>

@@ -4,9 +4,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { showToast } from '@/lib/toast';
-import { CheckCircle2, PenTool, Trash2, Upload, X } from 'lucide-react';
+import axios from 'axios';
+import { CheckCircle2, FileSignature, PenTool, Trash2, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 interface Signature {
@@ -18,10 +20,22 @@ interface Signature {
     created_at: string;
 }
 
+// Helper to get CSRF token
+function getCsrfToken(): string {
+    // Try XSRF-TOKEN cookie first (preferred by Laravel)
+    const xsrfMatches = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+    if (xsrfMatches) {
+        return decodeURIComponent(xsrfMatches[1]);
+    }
+    // Fallback to meta tag
+    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
+
 export default function SignatureManager() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [signatures, setSignatures] = useState<Signature[]>([]);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [loading, setLoading] = useState(false);
     const [uploadFile, setUploadFile] = useState<File | null>(null);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -53,12 +67,17 @@ export default function SignatureManager() {
 
     const fetchSignatures = async () => {
         try {
-            const response = await fetch(route('signatures.index'));
-            const data = await response.json();
-            console.log('Fetched signatures:', data);
-            setSignatures(data.signatures || []);
+            const response = await axios.get(route('signatures.index'), {
+                headers: {
+                    Accept: 'application/json',
+                },
+                withCredentials: true,
+            });
+            setSignatures(response.data.signatures || []);
         } catch (error) {
             console.error('Failed to fetch signatures:', error);
+        } finally {
+            setInitialLoading(false);
         }
     };
 
@@ -144,29 +163,29 @@ export default function SignatureManager() {
         try {
             const dataUrl = canvas.toDataURL('image/png');
 
-            const response = await fetch(route('signatures.store'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                },
-                body: JSON.stringify({
+            const response = await axios.post(
+                route('signatures.store'),
+                {
                     signature: dataUrl,
                     signature_type: 'manual',
                     is_default: signatures.length === 0, // Set as default if first signature
-                }),
-            });
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-XSRF-TOKEN': getCsrfToken(),
+                    },
+                    withCredentials: true,
+                },
+            );
 
-            if (response.ok) {
-                showToast.success('✅ Signature saved successfully');
-                clearCanvas();
-                fetchSignatures();
-            } else {
-                const error = await response.json();
-                showToast.error(`❌ ${error.message || 'Failed to save signature'}`);
-            }
-        } catch (error) {
-            showToast.error('❌ An error occurred while saving signature');
+            showToast.success('✅ Tanda tangan berhasil disimpan!');
+            clearCanvas();
+            await fetchSignatures();
+        } catch (error: any) {
+            const message = error.response?.data?.message || 'Gagal menyimpan tanda tangan';
+            showToast.error(`❌ ${message}`);
         } finally {
             setLoading(false);
         }
@@ -177,13 +196,13 @@ export default function SignatureManager() {
         if (file) {
             // Validate file type
             if (!file.type.startsWith('image/')) {
-                showToast.error('❌ Please select an image file');
+                showToast.error('❌ Pilih file gambar (PNG, JPG, JPEG)');
                 return;
             }
 
             // Validate file size (max 2MB)
             if (file.size > 2 * 1024 * 1024) {
-                showToast.error('❌ File size must be less than 2MB');
+                showToast.error('❌ Ukuran file maksimal 2MB');
                 return;
             }
 
@@ -201,27 +220,24 @@ export default function SignatureManager() {
             formData.append('signature_type', 'uploaded');
             formData.append('is_default', signatures.length === 0 ? '1' : '0');
 
-            const response = await fetch(route('signatures.upload'), {
-                method: 'POST',
+            await axios.post(route('signatures.upload'), formData, {
                 headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    'Content-Type': 'multipart/form-data',
+                    Accept: 'application/json',
+                    'X-XSRF-TOKEN': getCsrfToken(),
                 },
-                body: formData,
+                withCredentials: true,
             });
 
-            if (response.ok) {
-                showToast.success('✅ Signature uploaded successfully');
-                setUploadFile(null);
-                // Reset file input
-                const fileInput = document.getElementById('signature-file') as HTMLInputElement;
-                if (fileInput) fileInput.value = '';
-                fetchSignatures();
-            } else {
-                const error = await response.json();
-                showToast.error(`❌ ${error.message || 'Failed to upload signature'}`);
-            }
-        } catch (error) {
-            showToast.error('❌ An error occurred while uploading signature');
+            showToast.success('✅ Tanda tangan berhasil diupload!');
+            setUploadFile(null);
+            // Reset file input
+            const fileInput = document.getElementById('signature-file') as HTMLInputElement;
+            if (fileInput) fileInput.value = '';
+            await fetchSignatures();
+        } catch (error: any) {
+            const message = error.response?.data?.message || 'Gagal mengupload tanda tangan';
+            showToast.error(`❌ ${message}`);
         } finally {
             setLoading(false);
         }
@@ -230,23 +246,23 @@ export default function SignatureManager() {
     const setAsDefault = async (signatureId: number) => {
         setLoading(true);
         try {
-            const response = await fetch(route('signatures.setDefault', signatureId), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            await axios.post(
+                route('signatures.setDefault', signatureId),
+                {},
+                {
+                    headers: {
+                        Accept: 'application/json',
+                        'X-XSRF-TOKEN': getCsrfToken(),
+                    },
+                    withCredentials: true,
                 },
-            });
+            );
 
-            if (response.ok) {
-                showToast.success('✅ Default signature updated');
-                fetchSignatures();
-            } else {
-                const error = await response.json();
-                showToast.error(`❌ ${error.message || 'Failed to set default signature'}`);
-            }
-        } catch (error) {
-            showToast.error('❌ An error occurred');
+            showToast.success('✅ Tanda tangan default berhasil diupdate!');
+            await fetchSignatures();
+        } catch (error: any) {
+            const message = error.response?.data?.message || 'Gagal mengupdate tanda tangan default';
+            showToast.error(`❌ ${message}`);
         } finally {
             setLoading(false);
         }
@@ -255,22 +271,19 @@ export default function SignatureManager() {
     const deleteSignature = async (signatureId: number) => {
         setLoading(true);
         try {
-            const response = await fetch(route('signatures.destroy', signatureId), {
-                method: 'DELETE',
+            await axios.delete(route('signatures.destroy', signatureId), {
                 headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    Accept: 'application/json',
+                    'X-XSRF-TOKEN': getCsrfToken(),
                 },
+                withCredentials: true,
             });
 
-            if (response.ok) {
-                showToast.success('✅ Tanda tangan berhasil dihapus');
-                fetchSignatures();
-            } else {
-                const error = await response.json();
-                showToast.error(`❌ ${error.message || 'Gagal menghapus tanda tangan'}`);
-            }
-        } catch (error) {
-            showToast.error('❌ Terjadi kesalahan');
+            showToast.success('✅ Tanda tangan berhasil dihapus');
+            await fetchSignatures();
+        } catch (error: any) {
+            const message = error.response?.data?.message || 'Gagal menghapus tanda tangan';
+            showToast.error(`❌ ${message}`);
         } finally {
             setLoading(false);
             setDeleteDialogOpen(false);
@@ -294,24 +307,24 @@ export default function SignatureManager() {
             <Card>
                 <CardHeader>
                     <CardTitle>Digital Signature Management</CardTitle>
-                    <CardDescription>Create and manage your digital signatures for document approval</CardDescription>
+                    <CardDescription>Buat dan kelola tanda tangan digital Anda untuk proses approval dokumen</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Tabs defaultValue="draw" className="w-full">
                         <TabsList className="grid w-full grid-cols-2">
                             <TabsTrigger value="draw">
                                 <PenTool className="mr-2 h-4 w-4" />
-                                Draw Signature
+                                Gambar Tanda Tangan
                             </TabsTrigger>
                             <TabsTrigger value="upload">
                                 <Upload className="mr-2 h-4 w-4" />
-                                Upload Signature
+                                Upload Tanda Tangan
                             </TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="draw" className="space-y-4">
                             <div className="space-y-2">
-                                <Label>Draw your signature below</Label>
+                                <Label>Gambar tanda tangan Anda di bawah ini</Label>
                                 <canvas
                                     ref={canvasRef}
                                     width={600}
@@ -329,29 +342,29 @@ export default function SignatureManager() {
                             <div className="flex gap-2">
                                 <Button type="button" variant="outline" onClick={clearCanvas}>
                                     <X className="mr-2 h-4 w-4" />
-                                    Clear
+                                    Hapus
                                 </Button>
                                 <Button type="button" onClick={saveCanvasSignature} disabled={loading}>
-                                    Save Signature
+                                    {loading ? 'Menyimpan...' : 'Simpan Tanda Tangan'}
                                 </Button>
                             </div>
                         </TabsContent>
 
                         <TabsContent value="upload" className="space-y-4">
                             <div className="space-y-2">
-                                <Label htmlFor="signature-file">Upload signature image</Label>
+                                <Label htmlFor="signature-file">Upload gambar tanda tangan</Label>
                                 <Input id="signature-file" type="file" accept="image/png,image/jpeg,image/jpg" onChange={handleFileChange} />
-                                <p className="text-sm text-muted-foreground">Supported formats: PNG, JPG, JPEG. Max size: 2MB</p>
+                                <p className="text-sm text-muted-foreground">Format yang didukung: PNG, JPG, JPEG. Maksimal 2MB</p>
                             </div>
                             {uploadFile && (
                                 <div className="rounded-md border border-neutral-200 p-4 dark:border-neutral-800">
-                                    <p className="text-sm font-medium">Selected file: {uploadFile.name}</p>
-                                    <p className="text-sm text-muted-foreground">Size: {(uploadFile.size / 1024).toFixed(2)} KB</p>
+                                    <p className="text-sm font-medium">File dipilih: {uploadFile.name}</p>
+                                    <p className="text-sm text-muted-foreground">Ukuran: {(uploadFile.size / 1024).toFixed(2)} KB</p>
                                 </div>
                             )}
                             <Button type="button" onClick={uploadSignature} disabled={!uploadFile || loading}>
                                 <Upload className="mr-2 h-4 w-4" />
-                                Upload Signature
+                                {loading ? 'Mengupload...' : 'Upload Tanda Tangan'}
                             </Button>
                         </TabsContent>
                     </Tabs>
@@ -359,20 +372,51 @@ export default function SignatureManager() {
             </Card>
 
             {/* Signatures List */}
-            {signatures.length > 0 && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>My Signatures</CardTitle>
-                        <CardDescription>Manage your saved signatures</CardDescription>
-                    </CardHeader>
-                    <CardContent>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Tanda Tangan Saya</CardTitle>
+                    <CardDescription>Kelola tanda tangan yang telah disimpan</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {initialLoading ? (
+                        /* Loading skeleton */
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {[1, 2].map((i) => (
+                                <Card key={i} className="relative">
+                                    <CardContent className="p-4">
+                                        <div className="mb-2 flex items-start justify-between">
+                                            <Skeleton className="h-5 w-16" />
+                                            <Skeleton className="h-5 w-20" />
+                                        </div>
+                                        <Skeleton className="mb-4 h-32 w-full rounded" />
+                                        <div className="flex gap-2">
+                                            <Skeleton className="h-8 w-24" />
+                                            <Skeleton className="h-8 w-8" />
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    ) : signatures.length === 0 ? (
+                        /* Empty state */
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <div className="mb-4 rounded-full bg-muted p-4">
+                                <FileSignature className="h-8 w-8 text-muted-foreground" />
+                            </div>
+                            <h3 className="mb-1 text-lg font-medium">Belum ada tanda tangan</h3>
+                            <p className="max-w-sm text-sm text-muted-foreground">
+                                Gambar atau upload tanda tangan Anda di atas untuk memulai. Tanda tangan akan digunakan untuk proses approval dokumen.
+                            </p>
+                        </div>
+                    ) : (
+                        /* Signatures grid */
                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                             {signatures.map((signature) => (
                                 <Card key={signature.id} className="relative">
                                     <CardContent className="p-4">
                                         <div className="mb-2 flex items-start justify-between">
                                             <Badge variant={signature.is_default ? 'default' : 'secondary'}>
-                                                {signature.signature_type === 'manual' ? 'Drawn' : 'Uploaded'}
+                                                {signature.signature_type === 'manual' ? 'Digambar' : 'Diupload'}
                                             </Badge>
                                             {signature.is_default && (
                                                 <Badge variant="outline" className="ml-2">
@@ -384,10 +428,10 @@ export default function SignatureManager() {
                                         <div className="mb-4 flex h-32 items-center justify-center rounded border border-neutral-200 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-950">
                                             <img
                                                 src={signature.signature_url}
-                                                alt="Signature"
+                                                alt="Tanda Tangan"
                                                 className="max-h-full max-w-full object-contain"
                                                 onError={(e) => {
-                                                    console.error('Failed to load signature image:', signature);
+                                                    console.error('Failed to load signature image:', signature.signature_url);
                                                     e.currentTarget.src =
                                                         'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkVycm9yPC90ZXh0Pjwvc3ZnPg==';
                                                 }}
@@ -419,9 +463,9 @@ export default function SignatureManager() {
                                 </Card>
                             ))}
                         </div>
-                    </CardContent>
-                </Card>
-            )}
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Delete Confirmation Dialog */}
             <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
